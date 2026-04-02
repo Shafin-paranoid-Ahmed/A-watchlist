@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Watchlist | Movies & Series Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">
+                    <span class="logo-icon">🎬</span>
+                    <span class="logo-text">WATCHLIST</span>
+                </h1>
+                <p class="tagline">Track your movies & series journey</p>
+            </div>
+        </header>
+
+        <!-- Stats Bar -->
+        <section class="stats-bar">
+            <div class="stat">
+                <span class="stat-number" id="totalCount">0</span>
+                <span class="stat-label">Total</span>
+            </div>
+            <div class="stat">
+                <span class="stat-number" id="watchedCount">0</span>
+                <span class="stat-label">Watched</span>
+            </div>
+            <div class="stat">
+                <span class="stat-number" id="watchingCount">0</span>
+                <span class="stat-label">Watching</span>
+            </div>
+            <div class="stat">
+                <span class="stat-number" id="wantToWatchCount">0</span>
+                <span class="stat-label">Want to Watch</span>
+            </div>
+        </section>
+
+        <!-- Controls -->
+        <section class="controls">
+            <div class="search-box">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="m21 21-4.35-4.35"/>
+                </svg>
+                <input type="text" id="searchInput" placeholder="Search your watchlist...">
+            </div>
+            <div class="filter-buttons">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="movie">Movies</button>
+                <button class="filter-btn" data-filter="series">Series</button>
+                <button class="filter-btn" data-filter="watched">Watched</button>
+                <button class="filter-btn" data-filter="watching">Watching</button>
+                <button class="filter-btn" data-filter="want-to-watch">Want to Watch</button>
+            </div>
+            <button class="import-btn" id="importBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                Import
+            </button>
+            <button class="add-btn" id="addNewBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Add New
+            </button>
+        </section>
+
+        <!-- Watchlist Grid -->
+        <main class="watchlist-container">
+            <div class="watchlist-grid" id="watchlistGrid">
+                <!-- Cards will be inserted here -->
+            </div>
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">🎥</div>
+                <h3>Your watchlist is empty</h3>
+                <p>Start adding movies and series to track your entertainment journey!</p>
+                <button class="add-btn" onclick="openModal()">Add Your First Title</button>
+            </div>
+        </main>
+
+        <!-- Add/Edit Modal -->
+        <div class="modal-overlay" id="modalOverlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2 id="modalTitle">Add New Title</h2>
+                    <button class="close-btn" id="closeModal">&times;</button>
+                </div>
+                <form id="watchlistForm">
+                    <input type="hidden" id="editId">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="title">Title *</label>
+                            <input type="text" id="title" required placeholder="e.g., Inception">
+                        </div>
+                        <div class="form-group">
+                            <label for="year">Year</label>
+                            <input type="number" id="year" placeholder="e.g., 2010" min="1900" max="2030">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="type">Type *</label>
+                            <select id="type" required>
+                                <option value="movie">Movie</option>
+                                <option value="series">Series</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="status">Status *</label>
+                            <select id="status" required>
+                                <option value="want-to-watch">Want to Watch</option>
+                                <option value="watching">Watching</option>
+                                <option value="watched">Watched</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="genre">Genre</label>
+                            <input type="text" id="genre" placeholder="e.g., Sci-Fi, Action">
+                        </div>
+                        <div class="form-group">
+                            <label for="myRating">My Rating</label>
+                            <div class="rating-input">
+                                <input type="number" id="myRating" min="0" max="10" step="0.1" placeholder="0-10">
+                                <span class="rating-max">/ 10</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="posterUrl">Poster URL</label>
+                        <input type="url" id="posterUrl" placeholder="https://...">
+                    </div>
+
+                    <div class="form-group">
+                        <label>External Links</label>
+                        <div class="links-grid">
+                            <div class="link-input">
+                                <span class="link-label">🎬 IMDB</span>
+                                <input type="url" id="imdbLink" placeholder="https://imdb.com/title/...">
+                            </div>
+                            <div class="link-input">
+                                <span class="link-label">🎞️ Letterboxd</span>
+                                <input type="url" id="letterboxdLink" placeholder="https://letterboxd.com/film/...">
+                            </div>
+                            <div class="link-input">
+                                <span class="link-label">🍅 Rotten Tomatoes</span>
+                                <input type="url" id="rottenTomatoesLink" placeholder="https://rottentomatoes.com/...">
+                            </div>
+                            <div class="link-input">
+                                <span class="link-label">📺 JustWatch</span>
+                                <input type="url" id="justWatchLink" placeholder="https://justwatch.com/...">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="notes">Notes</label>
+                        <textarea id="notes" rows="3" placeholder="Your thoughts, recommendations, where to watch..."></textarea>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" id="cancelBtn">Cancel</button>
+                        <button type="submit" class="btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Import Modal -->
+        <div class="modal-overlay" id="importModalOverlay">
+            <div class="modal import-modal">
+                <div class="modal-header">
+                    <h2>Import Your Watchlist</h2>
+                    <button class="close-btn" id="closeImportModal">&times;</button>
+                </div>
+                <div class="import-content">
+                    <p class="import-intro">Import your existing watch history from popular services. Export your data from each platform and upload the CSV file here.</p>
+                    
+                    <div class="import-tabs">
+                        <button class="import-tab active" data-source="letterboxd">🎞️ Letterboxd</button>
+                        <button class="import-tab" data-source="imdb">🎬 IMDB</button>
+                        <button class="import-tab" data-source="csv">📄 Custom CSV</button>
+                    </div>
+
+                    <div class="import-instructions" id="importInstructions">
+                        <!-- Letterboxd Instructions (default) -->
+                        <div class="instruction-panel active" data-source="letterboxd">
+                            <h3>How to export from Letterboxd:</h3>
+                            <ol>
+                                <li>Go to <a href="https://letterboxd.com/settings/data/" target="_blank">letterboxd.com/settings/data/</a></li>
+                                <li>Click <strong>"Export Your Data"</strong></li>
+                                <li>Download the ZIP file and extract it</li>
+                                <li>Upload one of these files:
+                                    <ul>
+                                        <li><code>watched.csv</code> - All films you've watched</li>
+                                        <li><code>ratings.csv</code> - Films with your ratings</li>
+                                        <li><code>watchlist.csv</code> - Your watchlist</li>
+                                        <li><code>diary.csv</code> - Your diary entries</li>
+                                    </ul>
+                                </li>
+                            </ol>
+                        </div>
+
+                        <!-- IMDB Instructions -->
+                        <div class="instruction-panel" data-source="imdb">
+                            <h3>How to export from IMDB:</h3>
+                            <ol>
+                                <li>Go to your <a href="https://www.imdb.com/list/ratings" target="_blank">IMDB Ratings</a> or <a href="https://www.imdb.com/list/watchlist" target="_blank">Watchlist</a></li>
+                                <li>Click the <strong>three dots menu (⋮)</strong></li>
+                                <li>Select <strong>"Export"</strong></li>
+                                <li>Upload the downloaded CSV file</li>
+                            </ol>
+                        </div>
+
+                        <!-- Custom CSV Instructions -->
+                        <div class="instruction-panel" data-source="csv">
+                            <h3>Custom CSV Format:</h3>
+                            <p>Your CSV should have headers. Supported columns:</p>
+                            <ul>
+                                <li><code>title</code> or <code>name</code> - Movie/series title (required)</li>
+                                <li><code>year</code> - Release year</li>
+                                <li><code>type</code> - "movie" or "series"</li>
+                                <li><code>rating</code> - Your rating (0-10)</li>
+                                <li><code>status</code> - "watched", "watching", or "want-to-watch"</li>
+                                <li><code>genre</code> or <code>genres</code> - Genre(s)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="import-dropzone" id="importDropzone">
+                        <input type="file" id="importFile" accept=".csv" hidden>
+                        <div class="dropzone-content">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            <p>Drop your CSV file here or <span class="browse-link">browse</span></p>
+                            <span class="file-types">Supports .csv files</span>
+                        </div>
+                    </div>
+
+                    <div class="import-preview" id="importPreview" style="display: none;">
+                        <h3>Preview <span id="previewCount"></span></h3>
+                        <div class="preview-table-wrapper">
+                            <table class="preview-table" id="previewTable">
+                                <thead></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <div class="import-options">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="skipDuplicates" checked>
+                                Skip duplicates (same title + year)
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="markAsWatched" checked>
+                                Mark all as "Watched"
+                            </label>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn-secondary" id="cancelImport">Cancel</button>
+                            <button type="button" class="btn-primary" id="confirmImport">
+                                Import <span id="importCountBtn">0</span> Titles
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+        <div class="toast" id="toast"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
