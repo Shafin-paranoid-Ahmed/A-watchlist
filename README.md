@@ -59,21 +59,66 @@ npm start
 # 4. Open http://localhost:3000
 ```
 
-### Option 3: Deploy to CodeSandbox
+## 🚀 Deployment Guide
 
-1. Push to GitHub (your `.env` is gitignored - safe!)
-2. Import repo to [CodeSandbox](https://codesandbox.io/)
-3. Go to **Settings** → **Env Variables**
-4. Add:
-   - `OMDB_API_KEY` = your OMDB key
-   - `TMDB_API_KEY` = your TMDB key
-5. Done! Auto-fetch works without exposing keys.
+### Deploy to CodeSandbox (Recommended)
 
-### Option 4: Deploy Client to GitHub Pages
+**Step 1: Push to GitHub**
+```bash
+git add .
+git commit -m "Initial commit"
+git push origin main
+```
+> ⚠️ Make sure `.env` is in `.gitignore` - your API keys won't be pushed!
 
-1. Push `client/` folder to GitHub
-2. **Settings** → **Pages** → Select branch
-3. Users will enter their own API keys in Settings
+**Step 2: Import to CodeSandbox**
+1. Go to [codesandbox.io](https://codesandbox.io/)
+2. Click **"Create Sandbox"** → **"Import Repository"**
+3. Paste your GitHub repo URL
+4. Select **"Node.js"** as the template
+
+**Step 3: Add Environment Variables**
+1. In CodeSandbox, click the **⚙️ Settings** icon (bottom left)
+2. Go to **"Env Variables"**
+3. Add these variables:
+   | Key | Value |
+   |-----|-------|
+   | `OMDB_API_KEY` | your_omdb_key_here |
+   | `TMDB_API_KEY` | your_tmdb_key_here |
+4. Click **"Save"**
+
+**Step 4: Done!**
+- Your app will auto-restart with the keys loaded
+- Share the CodeSandbox URL with anyone!
+- API keys are hidden from users
+
+---
+
+### Deploy to Vercel/Render/Railway
+
+**Step 1: Connect your GitHub repo**
+
+**Step 2: Configure Build Settings**
+- **Build Command:** `npm install`
+- **Start Command:** `npm start`
+- **Root Directory:** `/` (leave default)
+
+**Step 3: Add Environment Variables**
+In the dashboard, add:
+- `OMDB_API_KEY`
+- `TMDB_API_KEY`
+
+---
+
+### Deploy Client Only (GitHub Pages / Netlify)
+
+If you just want the static client (users enter their own API keys):
+
+1. Push the `client/` folder contents to GitHub
+2. **GitHub:** Settings → Pages → Select branch → Set folder to `/client`
+3. **Netlify:** Drag & drop the `client` folder
+
+> Note: Without the server, users must enter their own API keys in Settings
 
 ## How to Use
 
@@ -156,13 +201,34 @@ localStorage.setItem('watchlist_data', JSON.stringify(yourDataArray));
 location.reload();
 ```
 
+## 🔑 Getting API Keys
+
+### TMDB API Key (Recommended - better posters)
+1. Sign up at [themoviedb.org](https://www.themoviedb.org/signup)
+2. Go to [Settings → API](https://www.themoviedb.org/settings/api)
+3. Click **"Create"** → Select **"Developer"**
+4. Fill out the form (use "Personal" for type)
+5. Copy **"API Key (v3 auth)"**
+
+### OMDB API Key (for IMDB ratings)
+1. Go to [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx)
+2. Select **"FREE! (1,000 daily limit)"**
+3. Enter your email and submit
+4. Check email and click verification link
+5. Copy your API key
+
+---
+
 ## Tech Stack
 
-- **HTML5** - Semantic markup
-- **CSS3** - Modern styling with CSS variables, Grid, Flexbox
-- **Vanilla JavaScript** - No frameworks, just clean ES6+
-- **Google Fonts** - Bebas Neue & Inter fonts
-- **LocalStorage API** - Client-side data persistence
+**Client:**
+- HTML5, CSS3, Vanilla JavaScript (ES6+)
+- Google Fonts (Bebas Neue & Inter)
+- LocalStorage for data persistence
+
+**Server:**
+- Node.js + Express
+- API proxy for OMDB & TMDB
 
 ## Browser Support
 
