@@ -6,15 +6,14 @@ A beautiful, modern watchlist application to track your movies and TV series. Ke
 
 ```
 A-watchlist/
-├── client/                 # Frontend (HTML/CSS/JS)
-│   ├── index.html
-│   ├── styles.css
-│   └── app.js
-├── server/                 # Backend (Node.js/Express)
-│   └── index.js            # API proxy server
+├── client/                 # Frontend source (HTML/CSS/JS)
+├── public/                 # Generated on Vercel build — gitignored locally
+├── server/                 # Express API + app export for Vercel
+├── scripts/                # e.g. copy client → public for deploy
+├── index.js                # Vercel entry (exports Express app)
 ├── package.json
-├── .env.example            # Template for API keys
-├── .gitignore              # Keeps .env out of git
+├── .env.example
+├── .gitignore
 └── README.md
 ```
 
@@ -94,19 +93,51 @@ git push origin main
 
 ---
 
-### Deploy to Vercel/Render/Railway
+### Deploy to Vercel
 
-**Step 1: Connect your GitHub repo**
+Vercel treats this repo as an **Express** app. Static files must live in `public/` at deploy time, so we run `vercel-build` to copy `client/` → `public/`. Your API keys only go in the Vercel dashboard (never in git).
 
-**Step 2: Configure Build Settings**
-- **Build Command:** `npm install`
-- **Start Command:** `npm start`
-- **Root Directory:** `/` (leave default)
+**Step 1: Push the repo to GitHub** (same as CodeSandbox — no `.env` committed)
 
-**Step 3: Add Environment Variables**
-In the dashboard, add:
-- `OMDB_API_KEY`
-- `TMDB_API_KEY`
+**Step 2: Import the project**
+1. Go to [vercel.com/new](https://vercel.com/new)
+2. **Import** your Git repository
+3. Vercel usually auto-detects **Express**; leave the root directory as **.**
+
+**Step 3: Environment variables** (Project → Settings → Environment Variables)
+
+| Name | Value |
+|------|--------|
+| `OMDB_API_KEY` | Your OMDB key |
+| `TMDB_API_KEY` | Your TMDB **API key** (not the word `NULL` — get a real key from TMDB) |
+
+Apply to **Production** (and **Preview** if you want previews to work too).
+
+**Step 4: Build**
+
+- **Install Command:** `npm install` (default)
+- **Build Command:** `npm run build` (default when Vercel sees a `build` script in `package.json`).  
+  This copies `client/` → `public/` so Vercel’s CDN can serve your HTML/CSS/JS ([Express on Vercel](https://vercel.com/docs/frameworks/backend/express) ignores `express.static()`).
+
+Do **not** set a custom **Output Directory** to `client` for this full-stack setup — the Express app plus `public/` is the correct layout.
+
+**Step 5: Deploy**
+
+Click **Deploy**. Open the production URL: the HTML/CSS/JS load from `public/`, and `/api/*` hits your Express routes with server-side secrets.
+
+**Local check (optional)**  
+`npm install` then `npx vercel dev` (requires [Vercel CLI](https://vercel.com/docs/cli)).
+
+---
+
+### Deploy to Render / Railway
+
+Use **Docker** or a **Node web service**:
+
+- **Build:** `npm install && npm run vercel-build` (optional `public/` copy if you serve static from disk), or `npm install` only if the platform serves `client/` another way
+- **Start:** `npm start` (runs `node server/index.js`)
+
+Set the same env vars: `OMDB_API_KEY`, `TMDB_API_KEY`. On Render/Railway, `express.static` for `./client` still runs, so you may **skip** `vercel-build` unless you rely on a `public/` folder.
 
 ---
 

@@ -21,3 +21,6 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Generated for Vercel (client copied here at build; do not commit)
+public/

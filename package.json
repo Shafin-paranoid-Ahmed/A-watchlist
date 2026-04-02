@@ -2,11 +2,13 @@
   "name": "watchlist",
   "version": "1.0.0",
   "description": "A beautiful watchlist app to track movies and series",
-  "main": "server/index.js",
+  "main": "index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "client": "npx serve client"
+    "client": "npx serve client",
+    "build": "node scripts/copy-client-to-public.js",
+    "vercel-build": "node scripts/copy-client-to-public.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
