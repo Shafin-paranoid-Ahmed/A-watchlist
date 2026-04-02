@@ -12,6 +12,10 @@ const OMDB_BASE_URL = 'https://www.omdbapi.com/';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/';
 
+// Server-side API config (for when API keys are in .env)
+let serverHasOmdbKey = false;
+let serverHasTmdbKey = false;
+
 // DOM Elements
 const watchlistGrid = document.getElementById('watchlistGrid');
 const emptyState = document.getElementById('emptyState');
@@ -73,13 +77,30 @@ let detectedImportStatus = 'watched';
 // INITIALIZATION
 // ============================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     loadWatchlist();
     loadApiKey();
+    await checkServerConfig();
     renderWatchlist();
     updateStats();
     setupEventListeners();
 });
+
+// Check if server has API keys configured
+async function checkServerConfig() {
+    try {
+        const response = await fetch('/api/config');
+        if (response.ok) {
+            const config = await response.json();
+            serverHasOmdbKey = config.hasOmdbKey;
+            serverHasTmdbKey = config.hasTmdbKey;
+            console.log('Server API config:', config);
+        }
+    } catch (error) {
+        // Server not available or no API proxy - use client-side keys
+        console.log('Using client-side API keys');
+    }
+}
 
 // ============================================
 // EVENT LISTENERS
@@ -1060,6 +1081,25 @@ function clearAllData() {
 // ============================================
 
 async function searchTMDB(title, year = null) {
+    // Use server API if available, otherwise use client-side key
+    if (serverHasTmdbKey) {
+        let url = `/api/tmdb/search?query=${encodeURIComponent(title)}`;
+        if (year) url += `&year=${year}`;
+        
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.results && data.results.length > 0) {
+                return data.results.filter(r => r.media_type === 'movie' || r.media_type === 'tv');
+            }
+            return [];
+        } catch (error) {
+            console.error('TMDB search error:', error);
+            return [];
+        }
+    }
+    
     if (!tmdbApiKey) return null;
     
     let url = `${TMDB_BASE_URL}/search/multi?api_key=${tmdbApiKey}&query=${encodeURIComponent(title)}`;
@@ -1070,7 +1110,6 @@ async function searchTMDB(title, year = null) {
         const data = await response.json();
         
         if (data.results && data.results.length > 0) {
-            // Filter to only movies and TV shows
             return data.results.filter(r => r.media_type === 'movie' || r.media_type === 'tv');
         }
         return [];
@@ -1081,10 +1120,21 @@ async function searchTMDB(title, year = null) {
 }
 
 async function getTMDBDetails(id, mediaType) {
+    // Use server API if available
+    if (serverHasTmdbKey) {
+        try {
+            const response = await fetch(`/api/tmdb/${mediaType}/${id}`);
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('TMDB details error:', error);
+            return null;
+        }
+    }
+    
     if (!tmdbApiKey) return null;
     
     try {
-        // Get main details
         const response = await fetch(`${TMDB_BASE_URL}/${mediaType}/${id}?api_key=${tmdbApiKey}&append_to_response=external_ids,credits`);
         const data = await response.json();
         return data;
@@ -1104,6 +1154,25 @@ function getTMDBPosterUrl(posterPath, size = 'w500') {
 // ============================================
 
 async function searchOMDB(title, year = null) {
+    // Use server API if available
+    if (serverHasOmdbKey) {
+        let url = `/api/omdb?s=${encodeURIComponent(title)}`;
+        if (year) url += `&y=${year}`;
+        
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.Response === 'True') {
+                return data.Search;
+            }
+            return [];
+        } catch (error) {
+            console.error('OMDB search error:', error);
+            return [];
+        }
+    }
+    
     if (!omdbApiKey) return null;
     
     let url = `${OMDB_BASE_URL}?apikey=${omdbApiKey}&s=${encodeURIComponent(title)}`;
@@ -1125,7 +1194,25 @@ async function searchOMDB(title, year = null) {
 }
 
 async function getOMDBDetails(imdbId) {
-    if (!omdbApiKey || !imdbId) return null;
+    if (!imdbId) return null;
+    
+    // Use server API if available
+    if (serverHasOmdbKey) {
+        try {
+            const response = await fetch(`/api/omdb?i=${encodeURIComponent(imdbId)}`);
+            const data = await response.json();
+            
+            if (data.Response === 'True') {
+                return data;
+            }
+            return null;
+        } catch (error) {
+            console.error('OMDB details error:', error);
+            return null;
+        }
+    }
+    
+    if (!omdbApiKey) return null;
     
     try {
         const response = await fetch(`${OMDB_BASE_URL}?apikey=${omdbApiKey}&i=${imdbId}&plot=short`);
@@ -1142,6 +1229,25 @@ async function getOMDBDetails(imdbId) {
 }
 
 async function getOMDBByTitle(title, year = null) {
+    // Use server API if available
+    if (serverHasOmdbKey) {
+        let url = `/api/omdb?t=${encodeURIComponent(title)}`;
+        if (year) url += `&y=${year}`;
+        
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.Response === 'True') {
+                return data;
+            }
+            return null;
+        } catch (error) {
+            console.error('OMDB details error:', error);
+            return null;
+        }
+    }
+    
     if (!omdbApiKey) return null;
     
     let url = `${OMDB_BASE_URL}?apikey=${omdbApiKey}&t=${encodeURIComponent(title)}`;
@@ -1175,7 +1281,8 @@ async function searchForTitle() {
         return;
     }
     
-    if (!tmdbApiKey && !omdbApiKey) {
+    const hasApiAccess = serverHasTmdbKey || serverHasOmdbKey || tmdbApiKey || omdbApiKey;
+    if (!hasApiAccess) {
         showToast('Please set at least one API key in Settings', 'error');
         openSettingsModal();
         return;
@@ -1189,7 +1296,7 @@ async function searchForTitle() {
     let results = [];
     
     // Try TMDB first (better posters)
-    if (tmdbApiKey) {
+    if (serverHasTmdbKey || tmdbApiKey) {
         const tmdbResults = await searchTMDB(title, year);
         if (tmdbResults && tmdbResults.length > 0) {
             results = tmdbResults.slice(0, 6).map(r => ({
@@ -1206,7 +1313,7 @@ async function searchForTitle() {
     }
     
     // Fallback to OMDB if no TMDB results
-    if (results.length === 0 && omdbApiKey) {
+    if (results.length === 0 && (serverHasOmdbKey || omdbApiKey)) {
         const omdbResults = await searchOMDB(title, year);
         if (omdbResults && omdbResults.length > 0) {
             results = omdbResults.slice(0, 6).map(r => ({
@@ -1393,7 +1500,8 @@ async function selectSearchResult(id, source, mediaType) {
 }
 
 async function bulkFetchDetails() {
-    if (!tmdbApiKey && !omdbApiKey) {
+    const hasApiAccess = serverHasTmdbKey || serverHasOmdbKey || tmdbApiKey || omdbApiKey;
+    if (!hasApiAccess) {
         showToast('Please set at least one API key first', 'error');
         return;
     }
@@ -1429,7 +1537,7 @@ async function bulkFetchDetails() {
         let foundData = false;
         
         // Try TMDB first for better posters
-        if (tmdbApiKey && !watchlist[index].posterUrl) {
+        if ((serverHasTmdbKey || tmdbApiKey) && !watchlist[index].posterUrl) {
             const tmdbResults = await searchTMDB(item.title, item.year);
             if (tmdbResults && tmdbResults.length > 0) {
                 const match = tmdbResults[0];
@@ -1453,7 +1561,7 @@ async function bulkFetchDetails() {
         }
         
         // Use OMDB for IMDB ratings
-        if (omdbApiKey && !watchlist[index].imdbRating) {
+        if ((serverHasOmdbKey || omdbApiKey) && !watchlist[index].imdbRating) {
             const omdbDetails = await getOMDBByTitle(item.title, item.year);
             if (omdbDetails) {
                 if (omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {

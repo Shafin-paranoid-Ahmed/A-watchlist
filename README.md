@@ -2,6 +2,22 @@
 
 A beautiful, modern watchlist application to track your movies and TV series. Keep track of what you've watched, what you're currently watching, and what you want to watch next!
 
+## 📁 Project Structure
+
+```
+A-watchlist/
+├── client/                 # Frontend (HTML/CSS/JS)
+│   ├── index.html
+│   ├── styles.css
+│   └── app.js
+├── server/                 # Backend (Node.js/Express)
+│   └── index.js            # API proxy server
+├── package.json
+├── .env.example            # Template for API keys
+├── .gitignore              # Keeps .env out of git
+└── README.md
+```
+
 ## Features
 
 - **Track Movies & Series** - Add any movie or TV show to your personal watchlist
@@ -17,26 +33,47 @@ A beautiful, modern watchlist application to track your movies and TV series. Ke
 
 ## Quick Start
 
-### Option 1: Open Locally
-Simply open `index.html` in your web browser!
+### Option 1: Client Only (Static - users enter own API keys)
 
-### Option 2: Host on CodeSandbox
+```bash
+# Just open in browser
+open client/index.html
 
-1. Go to [CodeSandbox](https://codesandbox.io/)
-2. Click **"Create Sandbox"**
-3. Choose **"Import from GitHub"** or **"Upload files"**
-4. Upload these files:
-   - `index.html`
-   - `styles.css`
-   - `app.js`
-5. Your watchlist is now live! Share the URL with anyone.
+# Or serve with any static server
+npx serve client
+```
 
-### Option 3: Deploy to GitHub Pages
+### Option 2: Full Stack (Your API keys hidden in .env)
 
-1. Push this code to a GitHub repository
-2. Go to **Settings** → **Pages**
-3. Select your branch (usually `main`) and save
-4. Your site will be live at `https://yourusername.github.io/repository-name`
+```bash
+# 1. Create .env with your API keys
+cp .env.example .env
+# Edit .env and add your actual keys
+
+# 2. Install dependencies
+npm install
+
+# 3. Start the server
+npm start
+
+# 4. Open http://localhost:3000
+```
+
+### Option 3: Deploy to CodeSandbox
+
+1. Push to GitHub (your `.env` is gitignored - safe!)
+2. Import repo to [CodeSandbox](https://codesandbox.io/)
+3. Go to **Settings** → **Env Variables**
+4. Add:
+   - `OMDB_API_KEY` = your OMDB key
+   - `TMDB_API_KEY` = your TMDB key
+5. Done! Auto-fetch works without exposing keys.
+
+### Option 4: Deploy Client to GitHub Pages
+
+1. Push `client/` folder to GitHub
+2. **Settings** → **Pages** → Select branch
+3. Users will enter their own API keys in Settings
 
 ## How to Use
 
