@@ -13,8 +13,10 @@ const PORT = process.env.PORT || 3000;
 const OMDB_API_KEY = process.env.OMDB_API_KEY || '';
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
 
+const supabaseSync = require('./supabase-sync');
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 // Local: serve client/ with Express.
 // Vercel: ignores express.static — static files must live in public/ (copied by vercel-build).
@@ -94,8 +96,48 @@ app.get('/api/tmdb/:mediaType/:id', async (req, res) => {
 app.get('/api/config', (req, res) => {
     res.json({
         hasOmdbKey: !!OMDB_API_KEY,
-        hasTmdbKey: !!TMDB_API_KEY
+        hasTmdbKey: !!TMDB_API_KEY,
+        hasCloudSync: supabaseSync.isConfigured()
     });
+});
+
+// ============================================
+// CLOUD SYNC (per-person lists via ?p=slug)
+// ============================================
+
+app.get('/api/sync/:slug', async (req, res) => {
+    if (!supabaseSync.isConfigured()) {
+        return res.status(503).json({ error: 'Cloud sync not configured', enabled: false });
+    }
+    const slug = supabaseSync.normalizeSlug(req.params.slug);
+    if (!slug) return res.status(400).json({ error: 'Invalid profile id' });
+    try {
+        const data = await supabaseSync.getWatchlistData(slug);
+        const items = Array.isArray(data) ? data : [];
+        res.json({ items, slug });
+    } catch (e) {
+        console.error('sync read:', e);
+        res.status(500).json({ error: 'Failed to load list' });
+    }
+});
+
+app.put('/api/sync/:slug', async (req, res) => {
+    if (!supabaseSync.isConfigured()) {
+        return res.status(503).json({ error: 'Cloud sync not configured', enabled: false });
+    }
+    const slug = supabaseSync.normalizeSlug(req.params.slug);
+    if (!slug) return res.status(400).json({ error: 'Invalid profile id' });
+    const items = req.body?.items;
+    if (!Array.isArray(items)) {
+        return res.status(400).json({ error: 'Body must be { items: [...] }' });
+    }
+    try {
+        await supabaseSync.upsertWatchlistData(slug, items);
+        res.json({ ok: true, slug });
+    } catch (e) {
+        console.error('sync write:', e);
+        res.status(500).json({ error: 'Failed to save list' });
+    }
 });
 
 const clientDir = path.join(__dirname, '..', 'client');

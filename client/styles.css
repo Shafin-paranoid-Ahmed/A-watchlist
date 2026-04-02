@@ -173,6 +173,62 @@ body::before {
     letter-spacing: 1px;
 }
 
+.profile-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+    margin-top: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    max-width: 520px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.profile-label {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.profile-slug {
+    color: var(--accent-gold);
+    font-size: 1rem;
+    letter-spacing: 0.5px;
+}
+
+.profile-btn {
+    padding: var(--space-xs) var(--space-md);
+    background: var(--accent-blue);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.profile-btn:hover {
+    filter: brightness(1.1);
+}
+
+.profile-btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-light);
+    color: var(--text-secondary);
+}
+
+.profile-btn-ghost:hover {
+    border-color: var(--accent-gold);
+    color: var(--text-primary);
+}
+
 /* ============================================
    STATS BAR
    ============================================ */

@@ -3,7 +3,6 @@
 // ============================================
 
 // Storage keys
-const STORAGE_KEY = 'watchlist_data';
 const OMDB_API_KEY_STORAGE = 'omdb_api_key';
 const TMDB_API_KEY_STORAGE = 'tmdb_api_key';
 
@@ -15,6 +14,11 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/';
 // Server-side API config (for when API keys are in .env)
 let serverHasOmdbKey = false;
 let serverHasTmdbKey = false;
+let hasCloudSync = false;
+
+const PROFILE_STORAGE_KEY = 'watchlist_active_profile';
+const LEGACY_STORAGE_KEY = 'watchlist_data';
+let syncPushTimer = null;
 
 // DOM Elements
 const watchlistGrid = document.getElementById('watchlistGrid');
@@ -74,13 +78,89 @@ let tmdbApiKey = '';
 let detectedImportStatus = 'watched';
 
 // ============================================
+// PROFILES (you vs partner — separate lists, same site)
+// ============================================
+
+function normalizeProfileSlug(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    const x = raw
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+    if (x.length < 1 || x.length > 48) return null;
+    return x;
+}
+
+function initProfileFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const p = params.get('p') || params.get('profile');
+    if (p) {
+        const s = normalizeProfileSlug(p);
+        if (s) localStorage.setItem(PROFILE_STORAGE_KEY, s);
+    }
+}
+
+function getActiveProfileSlug() {
+    return localStorage.getItem(PROFILE_STORAGE_KEY) || 'you';
+}
+
+function getLocalStorageKey() {
+    return `watchlist_data_v2_${getActiveProfileSlug()}`;
+}
+
+function updateProfileBar() {
+    const el = document.getElementById('profileSlugDisplay');
+    if (el) el.textContent = getActiveProfileSlug();
+}
+
+function openProfileModal() {
+    const input = document.getElementById('profileSlugInput');
+    if (input) input.value = getActiveProfileSlug();
+    document.getElementById('profileModalOverlay')?.classList.add('active');
+}
+
+function closeProfileModal() {
+    document.getElementById('profileModalOverlay')?.classList.remove('active');
+}
+
+function applyProfileSwitch() {
+    const raw = document.getElementById('profileSlugInput')?.value || '';
+    const s = normalizeProfileSlug(raw);
+    if (!s) {
+        showToast('Use 1–48 characters: letters, numbers, dashes only', 'error');
+        return;
+    }
+    localStorage.setItem(PROFILE_STORAGE_KEY, s);
+    const url = new URL(window.location.href);
+    url.searchParams.set('p', s);
+    window.history.replaceState({}, '', url);
+    closeProfileModal();
+    window.location.reload();
+}
+
+function copyProfileLink() {
+    const slug = getActiveProfileSlug();
+    const share = `${window.location.origin}${window.location.pathname}?p=${encodeURIComponent(slug)}`;
+    navigator.clipboard.writeText(share).then(
+        () => showToast('Link copied — send this for this list only', 'success'),
+        () => {
+            prompt('Copy this link:', share);
+        }
+    );
+}
+
+// ============================================
 // INITIALIZATION
 // ============================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-    loadWatchlist();
+    initProfileFromUrl();
     loadApiKey();
     await checkServerConfig();
+    await loadWatchlist();
+    updateProfileBar();
     renderWatchlist();
     updateStats();
     setupEventListeners();
@@ -94,10 +174,10 @@ async function checkServerConfig() {
             const config = await response.json();
             serverHasOmdbKey = config.hasOmdbKey;
             serverHasTmdbKey = config.hasTmdbKey;
+            hasCloudSync = !!config.hasCloudSync;
             console.log('Server API config:', config);
         }
     } catch (error) {
-        // Server not available or no API proxy - use client-side keys
         console.log('Using client-side API keys');
     }
 }
@@ -141,6 +221,7 @@ function setupEventListeners() {
         if (e.key === 'Escape') {
             closeModal();
             closeImportModal();
+            closeProfileModal();
         }
         if (e.key === 'n' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
@@ -233,101 +314,78 @@ function setupEventListeners() {
             searchResults.classList.remove('active');
         }
     });
+
+    document.getElementById('copyProfileLinkBtn')?.addEventListener('click', copyProfileLink);
+    document.getElementById('switchProfileBtn')?.addEventListener('click', openProfileModal);
+    document.getElementById('closeProfileModal')?.addEventListener('click', closeProfileModal);
+    document.getElementById('cancelProfileModal')?.addEventListener('click', closeProfileModal);
+    document.getElementById('confirmProfileModal')?.addEventListener('click', applyProfileSwitch);
+    document.getElementById('profileModalOverlay')?.addEventListener('click', (e) => {
+        if (e.target.id === 'profileModalOverlay') closeProfileModal();
+    });
 }
 
 // ============================================
 // DATA MANAGEMENT
 // ============================================
 
-function loadWatchlist() {
-    const data = localStorage.getItem(STORAGE_KEY);
-    watchlist = data ? JSON.parse(data) : getSampleData();
-    saveWatchlist();
+async function loadWatchlist() {
+    const slug = getActiveProfileSlug();
+
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy && !localStorage.getItem('watchlist_migrated_legacy')) {
+        localStorage.setItem(getLocalStorageKey(), legacy);
+        localStorage.setItem('watchlist_migrated_legacy', '1');
+    }
+
+    if (hasCloudSync) {
+        try {
+            const r = await fetch(`/api/sync/${encodeURIComponent(slug)}`);
+            if (r.ok) {
+                const j = await r.json();
+                if (Array.isArray(j.items)) {
+                    watchlist = j.items;
+                    localStorage.setItem(getLocalStorageKey(), JSON.stringify(watchlist));
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('Cloud load failed, using saved browser copy', e);
+        }
+    }
+
+    const data = localStorage.getItem(getLocalStorageKey());
+    watchlist = data ? JSON.parse(data) : [];
 }
 
 function saveWatchlist() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(watchlist));
+    localStorage.setItem(getLocalStorageKey(), JSON.stringify(watchlist));
+    scheduleCloudPush();
+}
+
+function scheduleCloudPush() {
+    if (!hasCloudSync) return;
+    clearTimeout(syncPushTimer);
+    syncPushTimer = setTimeout(() => pushWatchlistToCloud(), 1200);
+}
+
+async function pushWatchlistToCloud() {
+    if (!hasCloudSync) return;
+    const slug = getActiveProfileSlug();
+    try {
+        const r = await fetch(`/api/sync/${encodeURIComponent(slug)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: watchlist })
+        });
+        if (!r.ok) console.warn('Cloud save HTTP', r.status);
+    } catch (e) {
+        console.warn('Cloud save failed', e);
+    }
 }
 
 function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
-
-function getSampleData() {
-    return [
-        {
-            id: generateId(),
-            title: "Inception",
-            year: 2010,
-            type: "movie",
-            status: "watched",
-            genre: "Action, Adventure, Sci-Fi",
-            myRating: 9.2,
-            imdbRating: 8.8,
-            rtRating: 87,
-            posterUrl: "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
-            imdbLink: "https://www.imdb.com/title/tt1375666/",
-            letterboxdLink: "https://letterboxd.com/film/inception/",
-            rottenTomatoesLink: "https://www.rottentomatoes.com/m/inception",
-            justWatchLink: "https://www.justwatch.com/us/movie/inception",
-            notes: "Mind-bending masterpiece! The ending still makes me think.",
-            dateAdded: new Date().toISOString()
-        },
-        {
-            id: generateId(),
-            title: "Breaking Bad",
-            year: 2008,
-            type: "series",
-            status: "watched",
-            genre: "Crime, Drama, Thriller",
-            myRating: 9.8,
-            imdbRating: 9.5,
-            rtRating: 96,
-            posterUrl: "https://m.media-amazon.com/images/M/MV5BYmQ4YWMxYjUtNjZmYi00MDQ1LWFjMjMtNjA5ZDdiYjdiODU5XkEyXkFqcGdeQXVyMTMzNDExODE5._V1_SX300.jpg",
-            imdbLink: "https://www.imdb.com/title/tt0903747/",
-            letterboxdLink: "",
-            rottenTomatoesLink: "https://www.rottentomatoes.com/tv/breaking_bad",
-            justWatchLink: "https://www.justwatch.com/us/tv-show/breaking-bad",
-            notes: "Best TV series ever made. Walter White's transformation is incredible.",
-            dateAdded: new Date().toISOString()
-        },
-        {
-            id: generateId(),
-            title: "Dune: Part Two",
-            year: 2024,
-            type: "movie",
-            status: "want-to-watch",
-            genre: "Action, Adventure, Drama",
-            myRating: null,
-            imdbRating: 8.8,
-            rtRating: 92,
-            posterUrl: "https://m.media-amazon.com/images/M/MV5BN2QyZGU4ZDctOWMzMy00NTc5LThlOGQtODhmNDI1NmY5YzAwXkEyXkFqcGdeQXVyMDM2NDM2MQ@@._V1_SX300.jpg",
-            imdbLink: "https://www.imdb.com/title/tt15239678/",
-            letterboxdLink: "https://letterboxd.com/film/dune-part-two/",
-            rottenTomatoesLink: "https://www.rottentomatoes.com/m/dune_part_two",
-            justWatchLink: "https://www.justwatch.com/us/movie/dune-part-two",
-            notes: "Heard amazing things! Need to watch Part 1 first.",
-            dateAdded: new Date().toISOString()
-        },
-        {
-            id: generateId(),
-            title: "The Last of Us",
-            year: 2023,
-            type: "series",
-            status: "watching",
-            genre: "Action, Adventure, Drama",
-            myRating: 8.5,
-            imdbRating: 8.8,
-            rtRating: 96,
-            posterUrl: "https://m.media-amazon.com/images/M/MV5BZGUzYTI3M2EtZmM0Yy00NGUyLWI4ODEtN2Q3ZGJlYzhhZjU3XkEyXkFqcGdeQXVyNTM0OTY1OQ@@._V1_SX300.jpg",
-            imdbLink: "https://www.imdb.com/title/tt3581920/",
-            letterboxdLink: "",
-            rottenTomatoesLink: "https://www.rottentomatoes.com/tv/the_last_of_us",
-            justWatchLink: "https://www.justwatch.com/us/tv-show/the-last-of-us",
-            notes: "On episode 5. So emotional!",
-            dateAdded: new Date().toISOString()
-        }
-    ];
 }
 
 // ============================================

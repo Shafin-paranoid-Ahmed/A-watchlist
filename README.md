@@ -1,34 +1,38 @@
 # 🎬 Watchlist - Movies & Series Tracker
 
-A beautiful, modern watchlist application to track your movies and TV series. Keep track of what you've watched, what you're currently watching, and what you want to watch next!
+One site for **your** movies and shows: **import your backlog** (Letterboxd / IMDb CSV—there is no Letterboxd API), **auto-fill** posters and ratings (TMDB / OMDB), and **share the same deployment** with someone else using a **separate profile link** (`?p=`) so their list is not mixed with yours.
+
+| What you want | How this app does it |
+|----------------|----------------------|
+| Not re-type your backlog | **Import** CSV from Letterboxd or IMDb, optionally **Fetch** / bulk-enrich with TMDB & OMDB. |
+| Girlfriend adds her own backlog | She opens **her** link, e.g. `?p=jane`, and imports her CSV—different profile = different list. |
+| Same list on your phone and PC | Add optional **Supabase** (see Vercel env vars + `supabase-watchlists.sql`). Without it, data stays in the browser only. |
+
+**Privacy:** Treat `?p=...` like a weak password—use a long random slug if you care who can guess the URL.
 
 ## 📁 Project Structure
 
 ```
 A-watchlist/
-├── client/                 # Frontend source (HTML/CSS/JS)
-├── public/                 # Generated on Vercel build — gitignored locally
-├── server/                 # Express API + app export for Vercel
-├── scripts/                # e.g. copy client → public for deploy
-├── index.js                # Vercel entry (exports Express app)
+├── client/
+├── public/                  # build output — gitignored
+├── server/
+├── scripts/
+├── supabase-watchlists.sql  # run once in Supabase for cloud sync
+├── index.js
 ├── package.json
 ├── .env.example
-├── .gitignore
 └── README.md
 ```
 
 ## Features
 
-- **Track Movies & Series** - Add any movie or TV show to your personal watchlist
-- **Watch Status** - Mark items as "Want to Watch", "Watching", or "Watched"
-- **Personal Ratings** - Rate titles on a scale of 0-10
-- **External Links** - Quick links to IMDB, Letterboxd, Rotten Tomatoes, and JustWatch
-- **Search & Filter** - Easily find titles in your watchlist
-- **Notes** - Add personal notes, recommendations, or viewing platform info
-- **Poster Images** - Display movie posters for a visual library
-- **Statistics** - See your watching stats at a glance
-- **Local Storage** - Your data persists in your browser
-- **Responsive Design** - Works beautifully on desktop, tablet, and mobile
+- **CSV import** - Letterboxd / IMDb with sensible default status (watchlist vs watched)
+- **Profiles** - Header: current list, **Copy link**, **Switch list**
+- **Optional cloud sync** - Supabase + `SUPABASE_*` env on the server
+- **Proxied API keys** - TMDB / OMDB on the backend
+- **Statuses, ratings, notes, links, filters**
+- **Responsive UI**
 
 ## Quick Start
 
@@ -110,8 +114,18 @@ Vercel treats this repo as an **Express** app. Static files must live in `public
 |------|--------|
 | `OMDB_API_KEY` | Your OMDB key |
 | `TMDB_API_KEY` | Your TMDB **API key** (not the word `NULL` — get a real key from TMDB) |
+| `SUPABASE_URL` | (Optional) From [Supabase](https://supabase.com) → Project Settings → API |
+| `SUPABASE_SERVICE_ROLE_KEY` | (Optional) **service_role** secret — server only |
 
-Apply to **Production** (and **Preview** if you want previews to work too).
+To enable **sync across devices** (and backup in the cloud), create a free [Supabase](https://supabase.com) project, open **SQL Editor**, run `supabase-watchlists.sql`, then add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` above. Without Supabase, lists are stored **only in that browser** (profiles still isolate your lists vs hers on the same machine).
+
+Apply these vars to **Production** (and **Preview** if you use preview URLs).
+
+**Share the site**
+
+1. You bookmark something like `https://yoursite.vercel.app/?p=you` (or use **Copy link** in the header).
+2. She uses `https://yoursite.vercel.app/?p=her-name` and **Import** her CSV there.
+3. Different `p` → different list. With Supabase, each link keeps working from any device.
 
 **Step 4: Build**
 
@@ -223,12 +237,13 @@ Your watchlist data is stored in your browser's **localStorage**. This means:
 ### Export Your Data
 Open browser console (F12) and run:
 ```javascript
-console.log(JSON.stringify(JSON.parse(localStorage.getItem('watchlist_data')), null, 2));
+// Replace "you" with your profile slug from ?p=
+console.log(JSON.stringify(JSON.parse(localStorage.getItem('watchlist_data_v2_you')), null, 2));
 ```
 
 ### Import Data
 ```javascript
-localStorage.setItem('watchlist_data', JSON.stringify(yourDataArray));
+localStorage.setItem('watchlist_data_v2_you', JSON.stringify(yourDataArray));
 location.reload();
 ```
 

@@ -19,6 +19,12 @@
                     <span class="logo-text">WATCHLIST</span>
                 </h1>
                 <p class="tagline">Track your movies & series journey</p>
+                <div class="profile-bar" id="profileBar">
+                    <span class="profile-label">List profile</span>
+                    <strong class="profile-slug" id="profileSlugDisplay">you</strong>
+                    <button type="button" class="profile-btn" id="copyProfileLinkBtn" title="Share this list">Copy link</button>
+                    <button type="button" class="profile-btn profile-btn-ghost" id="switchProfileBtn">Switch list</button>
+                </div>
             </div>
             <button class="settings-btn" id="settingsBtn" title="Settings">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -318,6 +324,27 @@
                                 Import <span id="importCountBtn">0</span> Titles
                             </button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Switch profile modal -->
+        <div class="modal-overlay" id="profileModalOverlay">
+            <div class="modal settings-modal">
+                <div class="modal-header">
+                    <h2>Switch list</h2>
+                    <button class="close-btn" id="closeProfileModal">&times;</button>
+                </div>
+                <div class="settings-content">
+                    <p class="setting-desc">Each profile keeps its own titles. Use a short name (letters, numbers, dashes). Your girlfriend can use her own link so her backlog stays separate.</p>
+                    <div class="form-group">
+                        <label for="profileSlugInput">Profile id</label>
+                        <input type="text" id="profileSlugInput" placeholder="e.g. you, jane, alex" autocomplete="off">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" id="cancelProfileModal">Cancel</button>
+                        <button type="button" class="btn-primary" id="confirmProfileModal">Open this list</button>
                     </div>
                 </div>
             </div>
