@@ -4,7 +4,9 @@
  */
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+// Dashboard may label this "Secret key" (sb_secret_...) or legacy "service_role" JWT
+const SUPABASE_SERVICE_ROLE_KEY =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '';
 
 function isConfigured() {
     return !!(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);

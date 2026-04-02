@@ -92,14 +92,27 @@ This stores each watchlist in a Postgres database so **shared links show real da
 4. You should see “Success” with no errors.  
    - This creates a table `public.watchlists` with columns: `profile_slug`, `data` (JSON array of titles), `updated_at`.
 
-### 3. Get the URL and service role key
+### 3. Get the project URL and the **secret** key (not the publishable one)
 
-1. In Supabase, go to **Project Settings** (gear icon) → **API**.
-2. Under **Project URL**, copy the URL (looks like `https://xxxxxxxx.supabase.co`). This is your **`SUPABASE_URL`**.
-3. Under **Project API keys**, find **`service_role`** (**secret**). Click **Reveal**, then copy it. This is your **`SUPABASE_SERVICE_ROLE_KEY`**.
-   - **Important:** The `service_role` key bypasses database row-level rules. Treat it like a password—**never** paste it in client-side code, GitHub, or Discord. Only Vercel/Railway env vars or your local `.env` (which is gitignored).
+The dashboard often shows **Publishable key** and **Secret key** instead of “anon” / “service_role”. This app runs on your **server**, so you need the URL + **secret** only.
 
-Do **not** use the `anon` public key for this app’s sync—the server is written to use the service role on the backend only.
+#### **`SUPABASE_URL` (project URL)**
+
+It always looks like: `https://xxxxxxxx.supabase.co`
+
+- Open **Project Settings** (gear) → **General**. Look for **Project URL**, or copy the **Reference ID** and build: `https://<reference-id>.supabase.co`.
+- **Or** click **Connect** (top of the dashboard) — connection examples include this same `https://…supabase.co` URL.
+
+#### **`SUPABASE_SERVICE_ROLE_KEY` (elevated / server key)**
+
+- Open **Project Settings** → **API Keys** (path may be **Settings → API** on older layouts).
+- **Publishable key** (`sb_publishable_...`) — safe for websites/apps in the browser. **Do not use this** for the watchlist server.
+- **Secret key** (`sb_secret_...`) — **use this.** Copy it into `SUPABASE_SERVICE_ROLE_KEY` in Vercel or `.env`.
+- **Legacy:** If you see a **Legacy API keys** tab, you can instead copy **`service_role`** (long JWT). Same purpose as the new secret key.
+
+Treat the secret / `service_role` like a password—never put it in frontend code or public repos. Only server env vars (or local `.env`, gitignored).
+
+You can also set **`SUPABASE_SECRET_KEY`** to the same value if you prefer that name (the server accepts either).
 
 ### 4. Add variables to Vercel (or your host)
 
@@ -108,8 +121,8 @@ Do **not** use the `anon` public key for this app’s sync—the server is writt
 
    | Name | Value |
    |------|--------|
-   | `SUPABASE_URL` | Paste the **Project URL** from step 3 |
-   | `SUPABASE_SERVICE_ROLE_KEY` | Paste the **service_role** secret from step 3 |
+   | `SUPABASE_URL` | The `https://xxxxx.supabase.co` URL from step 3 |
+   | `SUPABASE_SERVICE_ROLE_KEY` | The **Secret** key (`sb_secret_...`) or legacy **service_role** JWT |
 
 3. Enable them for **Production** (and **Preview** if you want preview deployments to sync too).
 
@@ -120,8 +133,9 @@ Do **not** use the `anon` public key for this app’s sync—the server is writt
 In the project root, copy `.env.example` to `.env` (or use `server/.env`—the server loads both) and add:
 
 ```env
-SUPABASE_URL=https://xxxxxxxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_URL=https://okzxxxxxxxxx.supabase.co
+# New UI: paste "Secret key" here. Legacy: paste service_role JWT.
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxxxxxxxxxxxxxxx
 ```
 
 Run `npm start` again. The red **“link is empty”** banner should disappear when `/api/config` returns `"hasCloudSync": true`.

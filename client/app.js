@@ -400,7 +400,17 @@ function setupEventListeners() {
     
     // Import actions
     cancelImportBtn.addEventListener('click', resetImport);
-    confirmImportBtn.addEventListener('click', executeImport);
+    confirmImportBtn.addEventListener('click', async () => {
+        confirmImportBtn.disabled = true;
+        try {
+            await executeImport();
+        } catch (e) {
+            console.error(e);
+            showToast('Import failed — check the console', 'error');
+        } finally {
+            confirmImportBtn.disabled = false;
+        }
+    });
     
     // Settings modal
     settingsBtn.addEventListener('click', openSettingsModal);
@@ -1081,18 +1091,21 @@ function showPreview() {
     }
 }
 
-function executeImport() {
+async function executeImport() {
+    await checkServerConfig();
+
     const skipDuplicates = document.getElementById('skipDuplicates').checked;
     const importStatus = document.getElementById('importStatus').value;
-    
+
     let imported = 0;
     let skipped = 0;
-    
+    const newIds = new Set();
+
     pendingImports.forEach(item => {
         // Check for duplicates
         if (skipDuplicates) {
-            const exists = watchlist.some(w => 
-                w.title.toLowerCase() === item.title.toLowerCase() && 
+            const exists = watchlist.some(w =>
+                w.title.toLowerCase() === item.title.toLowerCase() &&
                 w.year === item.year
             );
             if (exists) {
@@ -1100,26 +1113,39 @@ function executeImport() {
                 return;
             }
         }
-        
+
         // Override status if not auto-detect
         if (importStatus !== 'auto') {
             item.status = importStatus;
         }
-        
+
         watchlist.push(item);
+        newIds.add(item.id);
         imported++;
     });
-    
+
     saveWatchlist();
     renderWatchlist();
     updateStats();
     closeImportModal();
-    
+
     let message = `Successfully imported ${imported} titles!`;
     if (skipped > 0) {
         message += ` (${skipped} duplicates skipped)`;
     }
+
+    const canEnrich =
+        imported > 0 &&
+        (serverHasTmdbKey || serverHasOmdbKey || tmdbApiKey || omdbApiKey);
+    if (imported > 0 && !canEnrich) {
+        message +=
+            ' To auto-fill posters & ratings, set TMDB_API_KEY / OMDB_API_KEY on the server (Vercel env) or add keys in Settings.';
+    }
     showToast(message, 'success');
+
+    if (canEnrich) {
+        await bulkFetchDetails({ onlyIds: newIds, manageUi: false, quietEmpty: true });
+    }
 }
 
 // ============================================
@@ -1784,37 +1810,42 @@ async function selectSearchResult(id, source, mediaType) {
     showToast(`Loaded details for "${title}"`, 'success');
 }
 
-async function bulkFetchDetails() {
+async function bulkFetchDetails(options = {}) {
+    const { onlyIds = null, manageUi = true, quietEmpty = false } = options;
+
     const hasApiAccess = serverHasTmdbKey || serverHasOmdbKey || tmdbApiKey || omdbApiKey;
     if (!hasApiAccess) {
         showToast('Please set at least one API key first', 'error');
         return;
     }
-    
-    // Find items missing posters or ratings
-    const itemsToUpdate = watchlist.filter(item => 
-        !item.posterUrl || !item.imdbRating
+
+    // Find items missing posters or ratings (optionally limit to specific ids, e.g. just imported)
+    const itemsToUpdate = watchlist.filter(item =>
+        (!item.posterUrl || !item.imdbRating) &&
+        (!onlyIds || onlyIds.has(item.id))
     );
-    
+
     if (itemsToUpdate.length === 0) {
-        showToast('All items already have posters and ratings!', 'success');
+        if (!quietEmpty) {
+            showToast('All items already have posters and ratings!', 'success');
+        }
         return;
     }
-    
+
     const progressDiv = document.getElementById('bulkProgress');
     const progressFill = document.getElementById('progressFill');
     const progressText = document.getElementById('progressText');
-    
-    progressDiv.style.display = 'flex';
-    bulkFetchBtn.disabled = true;
+
+    if (progressDiv) progressDiv.style.display = 'flex';
+    if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = true;
     
     let updated = 0;
     let failed = 0;
     
     for (let i = 0; i < itemsToUpdate.length; i++) {
         const item = itemsToUpdate[i];
-        progressText.textContent = `${i + 1} / ${itemsToUpdate.length}`;
-        progressFill.style.width = `${((i + 1) / itemsToUpdate.length) * 100}%`;
+        if (progressText) progressText.textContent = `${i + 1} / ${itemsToUpdate.length}`;
+        if (progressFill) progressFill.style.width = `${((i + 1) / itemsToUpdate.length) * 100}%`;
         
         const index = watchlist.findIndex(w => w.id === item.id);
         if (index === -1) continue;
@@ -1885,10 +1916,10 @@ async function bulkFetchDetails() {
     
     saveWatchlist();
     renderWatchlist();
-    
-    progressDiv.style.display = 'none';
-    bulkFetchBtn.disabled = false;
-    
+
+    if (progressDiv) progressDiv.style.display = 'none';
+    if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;
+
     let message = `Updated ${updated} items with posters/ratings`;
     if (failed > 0) {
         message += ` (${failed} not found)`;
