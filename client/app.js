@@ -375,10 +375,15 @@ function setupEventListeners() {
             importTabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             currentImportSource = tab.dataset.source;
-            
+
             instructionPanels.forEach(panel => {
                 panel.classList.toggle('active', panel.dataset.source === currentImportSource);
             });
+
+            const pastePanel = document.getElementById('importPastePanel');
+            const isPaste = currentImportSource === 'paste';
+            importDropzone.style.display = isPaste ? 'none' : 'block';
+            if (pastePanel) pastePanel.style.display = isPaste ? 'block' : 'none';
         });
     });
     
@@ -405,8 +410,16 @@ function setupEventListeners() {
         }
     });
     
+    document.getElementById('parsePasteTitlesBtn')?.addEventListener('click', handlePasteTitlesPreview);
+    document.getElementById('pasteTitlesInput')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            handlePasteTitlesPreview();
+        }
+    });
+
     // Import actions
-    cancelImportBtn.addEventListener('click', resetImport);
+    cancelImportBtn.addEventListener('click', () => resetImportState(false));
     confirmImportBtn.addEventListener('click', async () => {
         confirmImportBtn.disabled = true;
         try {
@@ -822,19 +835,35 @@ function showToast(message, type = 'success') {
 
 function openImportModal() {
     importModalOverlay.classList.add('active');
-    resetImport();
+    resetImportState(true);
 }
 
 function closeImportModal() {
     importModalOverlay.classList.remove('active');
-    resetImport();
+    resetImportState(true);
 }
 
-function resetImport() {
+/** @param {boolean} full - true: modal open/close — reset tab & paste box. false: cancel from preview — keep tab & pasted text. */
+function resetImportState(full) {
     pendingImports = [];
     importFile.value = '';
     importPreview.style.display = 'none';
-    importDropzone.style.display = 'block';
+
+    const pastePanel = document.getElementById('importPastePanel');
+
+    if (full) {
+        currentImportSource = 'letterboxd';
+        importTabs.forEach(t => t.classList.toggle('active', t.dataset.source === 'letterboxd'));
+        instructionPanels.forEach(p => p.classList.toggle('active', p.dataset.source === 'letterboxd'));
+        const ta = document.getElementById('pasteTitlesInput');
+        if (ta) ta.value = '';
+        importDropzone.style.display = 'block';
+        if (pastePanel) pastePanel.style.display = 'none';
+    } else {
+        const isPaste = currentImportSource === 'paste';
+        importDropzone.style.display = isPaste ? 'none' : 'block';
+        if (pastePanel) pastePanel.style.display = isPaste ? 'block' : 'none';
+    }
 }
 
 function handleFileSelect(e) {
@@ -1053,6 +1082,94 @@ function normalizeStatus(status) {
     return 'watched';
 }
 
+function stripLeadingBullet(line) {
+    return line
+        .replace(/^[\s\uFEFF]+/, '')
+        .replace(/^[\-\*\u2022\u00B7]\s+/, '')
+        .replace(/^\d+[\.\)]\s+/, '')
+        .trim();
+}
+
+function parseTitleAndYearFromPaste(rawLine) {
+    const line = stripLeadingBullet(rawLine);
+    if (!line) return null;
+
+    let title = line;
+    let year = null;
+
+    const parenYear = line.match(/^(.*?)\s*\((\d{4})(?:\s*[\u2013\u2014\-–]\s*\d{4})?\)\s*$/);
+    if (parenYear) {
+        title = parenYear[1].trim();
+        year = parseInt(parenYear[2], 10);
+    } else {
+        const dashYear = line.match(/^(.*?)\s+[\u2014\u2013\-–]\s*(\d{4})\s*$/);
+        if (dashYear && dashYear[1].trim().length >= 1) {
+            title = dashYear[1].trim();
+            year = parseInt(dashYear[2], 10);
+        }
+    }
+
+    if (title.length < 1) return null;
+    return { title, year, raw: rawLine };
+}
+
+function guessTypeFromPasteLine(line) {
+    const s = line.toLowerCase();
+    if (/\b(tv series|miniseries|limited series|anthology series)\b/.test(s)) return 'series';
+    if (/\(\s*tv(\s+series|\s+show)?\s*\)/.test(s)) return 'series';
+    return 'movie';
+}
+
+function splitPasteIntoSegments(text) {
+    const segments = [];
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const parts = trimmed.split(/\s*[|;]\s*/).map(p => p.trim()).filter(Boolean);
+        for (const p of parts) segments.push(p);
+    }
+    return segments;
+}
+
+function titlesFromPasteText(text) {
+    const segments = splitPasteIntoSegments(text);
+    const items = [];
+    for (const seg of segments) {
+        const parsed = parseTitleAndYearFromPaste(seg);
+        if (!parsed) continue;
+        items.push({
+            id: generateId(),
+            title: parsed.title,
+            year: parsed.year,
+            type: guessTypeFromPasteLine(seg),
+            status: 'want-to-watch',
+            genre: '',
+            myRating: null,
+            posterUrl: '',
+            imdbLink: '',
+            letterboxdLink: '',
+            rottenTomatoesLink: '',
+            justWatchLink: '',
+            notes: '',
+            dateAdded: new Date().toISOString()
+        });
+    }
+    return items;
+}
+
+function handlePasteTitlesPreview() {
+    const ta = document.getElementById('pasteTitlesInput');
+    const raw = ta?.value || '';
+    pendingImports = titlesFromPasteText(raw);
+    if (pendingImports.length === 0) {
+        showToast('No titles found — one per line, or split with | or ;', 'error');
+        return;
+    }
+    detectedImportStatus = 'want-to-watch';
+    showPreview();
+}
+
 function showPreview() {
     if (pendingImports.length === 0) {
         showToast('No valid entries found to import', 'error');
@@ -1060,22 +1177,26 @@ function showPreview() {
     }
     
     importDropzone.style.display = 'none';
+    const pastePanel = document.getElementById('importPastePanel');
+    if (pastePanel) pastePanel.style.display = 'none';
     importPreview.style.display = 'block';
-    
+
     document.getElementById('previewCount').textContent = `(${pendingImports.length} items)`;
     document.getElementById('importCountBtn').textContent = pendingImports.length;
-    
-    // Set the status dropdown based on detected status
+
     const importStatusSelect = document.getElementById('importStatus');
-    importStatusSelect.value = 'auto';
-    
-    // Update the auto option text to show detected status
     const autoOption = importStatusSelect.querySelector('option[value="auto"]');
     const statusLabels = {
         'watched': 'Watched',
         'watching': 'Watching',
         'want-to-watch': 'Want to Watch'
     };
+
+    if (currentImportSource === 'paste') {
+        importStatusSelect.value = 'want-to-watch';
+    } else {
+        importStatusSelect.value = 'auto';
+    }
     autoOption.textContent = `Auto-detect (${statusLabels[detectedImportStatus]})`;
     
     // Build preview table

@@ -1083,6 +1083,59 @@ form {
     text-decoration: underline;
 }
 
+.import-paste-panel {
+    margin-bottom: var(--space-lg);
+}
+
+.import-paste-label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: var(--space-sm);
+}
+
+.import-paste-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 200px;
+    padding: var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    resize: vertical;
+    margin-bottom: var(--space-md);
+}
+
+.import-paste-textarea:focus {
+    outline: none;
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 0 2px rgba(155, 89, 182, 0.2);
+}
+
+.import-paste-btn {
+    width: 100%;
+}
+
+.import-paste-hint {
+    margin-top: var(--space-sm);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.import-paste-hint kbd {
+    font-family: monospace;
+    font-size: 0.75rem;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+}
+
 .file-types {
     color: var(--text-muted);
     font-size: 0.85rem;

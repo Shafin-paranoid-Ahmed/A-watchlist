@@ -34,42 +34,85 @@ A-watchlist/
 
 ## Features
 
-- **CSV import** - Letterboxd / IMDb with sensible default status (watchlist vs watched)
-- **Profiles** - Header: current list, **Copy link**, **Switch list**
-- **Optional cloud sync** - Supabase + `SUPABASE_*` env on the server
-- **Proxied API keys** - TMDB / OMDB on the backend
-- **Statuses, ratings, notes, links, filters**
+- **CSV import** — Letterboxd / IMDb exports; **custom CSV** with flexible columns
+- **Paste titles** — Paste one or many movie/TV names (one per line, or split with `|` / `;`); optional year like `Title (1999)` or `Title — 2022`. Adds to **whatever list is active** (My list or Watch together), default status **Want to Watch**
+- **Profiles (`?p=`)** — Separate personal lists; header **Copy link** / **Switch list**
+- **Watch together** — Shared queue (`?list=shared`); optional `SHARED_LIST_SLUG` env for the Supabase row name
+- **Optional cloud sync** — Supabase; server holds the secret key only (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`)
+- **Proxied API keys** — TMDB / OMDB on the server so deploys can use env vars without exposing keys in the browser
+- **Bulk enrich** — Settings → **Fetch missing posters & ratings**; after CSV/paste import, the app **auto-enriches** new rows when the server has TMDB/OMDB configured (uses **`POST /api/enrich-batch`** with parallel upstream calls for speed)
+- **JSON backup** — Settings → **Export Watchlist** / **Import backup (.json)** for moving data without Supabase
+- **Search & filters** — Debounced search; filter by type and watch status
+- **Title lookup** — TMDB + OMDB search when adding or editing a title
 - **Responsive UI**
 
-## Quick Start
+## Running locally
 
-### Option 1: Client Only (Static - users enter own API keys)
+You need **Node.js 18+** ([nodejs.org](https://nodejs.org)).
 
-```bash
-# Just open in browser
-open client/index.html
+### Full stack (recommended)
 
-# Or serve with any static server
-npx serve client
-```
-
-### Option 2: Full Stack (Your API keys hidden in .env)
+The dev server serves the UI from **`client/`** and exposes **`/api/*`** (config, OMDB/TMDB proxies, optional Supabase sync, batch enrich).
 
 ```bash
-# 1. Create .env with your API keys
-cp .env.example .env
-# Edit .env and add your actual keys
-
-# 2. Install dependencies
+# 1. Clone and install
+git clone <your-repo-url>
+cd A-watchlist
 npm install
 
-# 3. Start the server
-npm start
+# 2. Environment variables (project root and/or server/ — both are loaded)
+copy .env.example .env
+# On macOS/Linux: cp .env.example .env
+# Edit .env: set OMDB_API_KEY, TMDB_API_KEY (optional but needed for search/enrich)
+# Optional: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for cloud sync (see Supabase section)
 
-# 4. Open http://localhost:3000
+# 3. Start Express
+npm start
+# Same as: npm run dev  →  node server/index.js
+
+# 4. Open the app
+# Browser: http://localhost:3000
+# Port: set PORT=8080 in .env to use another port (default 3000)
 ```
 
-For **cloud sync** locally, add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to your `.env` file (see the Supabase section below).
+What happens:
+
+- **`npm start`** runs `server/index.js`, which loads `.env` from **`server/.env`** and the **project root** `.env` (see `server/index.js`).
+- Static files are served from **`client/`** when **`VERCEL`** is not set.
+- **`npm run build`** copies `client/` → **`public/`** (used for **Vercel** deploys). You do **not** have to run `build` for normal local full-stack dev.
+
+### Client only (no backend)
+
+If you open the HTML file directly or serve **`client/`** alone, `/api/*` will not exist: put TMDB/OMDB keys in **Settings** in the UI (stored in `localStorage`), or use a static host without proxies.
+
+```bash
+npm run client
+# Runs: npx serve client — use the URL it prints (if 3000 is busy, serve picks another port)
+```
+
+You can also open `client/index.html` in a browser (some features may be limited by file:// CORS).
+
+### Optional: match Vercel locally
+
+Install the [Vercel CLI](https://vercel.com/docs/cli), then from the repo root:
+
+```bash
+npm install
+npm run build
+npx vercel dev
+```
+
+This uses the same `public/` + Express layout as production.
+
+---
+
+## Quick reference (deploy vs local)
+
+| | Local full stack | Vercel |
+|--|------------------|--------|
+| Start | `npm start` | Deploy with build `npm run build` |
+| Static UI | Served from `client/` | Served from `public/` (copy step in build) |
+| Env vars | `.env` / `server/.env` | Project → Settings → Environment Variables |
 
 ---
 
@@ -138,7 +181,7 @@ SUPABASE_URL=https://okzxxxxxxxxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxxxxxxxxxxxxxxx
 ```
 
-Run `npm start` again. The red **“link is empty”** banner should disappear when `/api/config` returns `"hasCloudSync": true`.
+Run `npm start` again. With valid Supabase env vars, `GET /api/config` should return `"hasCloudSync": true`, and lists load/save through `/api/sync/:slug` instead of staying browser-only.
 
 ### 6. Verify it works
 
@@ -151,9 +194,9 @@ Run `npm start` again. The red **“link is empty”** banner should disappear w
 
 | Problem | What to check |
 |---------|----------------|
-| Still see the red banner | Redeploy after adding env vars; confirm variable names match exactly (no extra spaces). |
-| `500` on `/api/sync/...` | SQL not run, or wrong URL/key; check Vercel **Functions** logs. |
-| Empty list on partner’s phone | Same `?p=` string; partner must use the exact profile slug you use. |
+| `hasCloudSync` stays false | Redeploy after adding env vars; confirm names match `.env.example` (no typos or extra spaces). |
+| `500` on `/api/sync/...` | SQL not run, or wrong URL/key; check server logs / Vercel **Functions** logs. |
+| Empty list on partner’s phone | Same `?p=` string; partner must use the exact profile slug you use; or use **Watch together** + `?list=shared` with Supabase. |
 | Want a new empty database | You can truncate in SQL Editor: `truncate table public.watchlists restart identity;` (destructive). |
 
 ---
@@ -283,6 +326,16 @@ If you just want the static client (users enter their own API keys):
 4. Upload the downloaded CSV file
 5. Preview and import!
 
+### Pasting titles (no CSV)
+1. Switch to **My list** or **Watch together** first — pasted rows go into the **active** list.
+2. Click **Import** → **Paste titles**.
+3. Paste names, **one per line**. Optional: several titles on one line separated by **`|`** or **`;`**. Optional year: `Inception (2010)` or `The Bear — 2022`.
+4. **Preview import** (or **Ctrl+Enter** / **⌘+Enter** in the box). Default status is **Want to Watch**; you can change it in the preview step.
+5. Confirm import. If the server has **TMDB/OMDB** env vars, new rows are **auto-enriched** with posters and ratings (same as after CSV import).
+
+### Custom CSV
+Use the **Custom CSV** tab; see the in-app instructions for column names (`title` / `name`, `year`, `type`, `status`, etc.).
+
 ### Adding a Title Manually
 1. Click the **"Add New"** button
 2. Fill in the title details:
@@ -304,12 +357,16 @@ You can get poster URLs from:
 - **Google Images**: Right-click an image and copy image address
 
 ### Filtering & Searching
-- Use the **search bar** to find titles by name, genre, or notes
+- Use the **search bar** to find titles by name, genre, or notes (input is **debounced** so the list does not repaint on every keystroke)
 - Use the **filter buttons** to show only Movies, Series, or by watch status
+
+### Bulk posters & ratings
+In **Settings**, use **Fetch missing posters & ratings** to fill gaps for the whole list. With **server-side** TMDB/OMDB keys, this uses **`POST /api/enrich-batch`** (parallel requests) instead of many slow round-trips from the browser.
 
 ### Keyboard Shortcuts
 - `Ctrl/Cmd + N`: Add new title
 - `Esc`: Close modal
+- In **Paste titles** textarea: `Ctrl/Cmd + Enter` runs **Preview import**
 
 ## Customization
 
@@ -326,11 +383,14 @@ Edit the CSS variables in `styles.css` under `:root` to customize the color sche
 
 ## Data Storage
 
-Your watchlist data is stored in your browser's **localStorage**. This means:
-- ✅ Data persists between browser sessions
-- ✅ No account or server needed
-- ⚠️ Data is browser-specific (not synced across devices)
-- ⚠️ Clearing browser data will delete your watchlist
+- **With Supabase configured:** the server reads/writes JSON per profile slug (`?p=`) or the shared list (`?list=shared`); the browser keeps a **cache** in `localStorage` for offline-ish speed.
+- **Without Supabase:** everything stays in **localStorage** only (per profile / shared mode keys such as `watchlist_data_v2_<slug>`).
+
+In all cases:
+
+- ✅ Data persists between browser sessions (until you clear site data)
+- ⚠️ Without cloud sync, data is **device-specific**
+- ⚠️ Clearing browser data for the site removes the local copy (use **Export** / Supabase if you need a backup)
 
 ### Export Your Data
 Open browser console (F12) and run:
@@ -372,7 +432,10 @@ location.reload();
 
 **Server:**
 - Node.js + Express
-- API proxy for OMDB & TMDB
+- API proxy for OMDB & TMDB (`/api/omdb`, `/api/tmdb/...`)
+- `GET /api/config` — whether server has keys + whether Supabase sync is configured
+- `POST /api/enrich-batch` — batch poster/rating enrichment (used by import + bulk fetch when server keys exist)
+- Optional Supabase REST sync (`/api/sync/:slug`)
 
 ## Browser Support
 

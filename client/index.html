@@ -236,9 +236,10 @@
                     <p class="import-intro">Import your existing watch history from popular services. Export your data from each platform and upload the CSV file here.</p>
                     
                     <div class="import-tabs">
-                        <button class="import-tab active" data-source="letterboxd">🎞️ Letterboxd</button>
-                        <button class="import-tab" data-source="imdb">🎬 IMDB</button>
-                        <button class="import-tab" data-source="csv">📄 Custom CSV</button>
+                        <button type="button" class="import-tab active" data-source="letterboxd">🎞️ Letterboxd</button>
+                        <button type="button" class="import-tab" data-source="imdb">🎬 IMDB</button>
+                        <button type="button" class="import-tab" data-source="csv">📄 Custom CSV</button>
+                        <button type="button" class="import-tab" data-source="paste">📝 Paste titles</button>
                     </div>
 
                     <div class="import-instructions" id="importInstructions">
@@ -284,6 +285,14 @@
                                 <li><code>genre</code> or <code>genres</code> - Genre(s)</li>
                             </ul>
                         </div>
+
+                        <!-- Paste titles -->
+                        <div class="instruction-panel" data-source="paste">
+                            <h3>Paste movie or TV titles</h3>
+                            <p>One title per line. You can separate extra titles on the same line with <code>|</code> or <code>;</code>.</p>
+                            <p>Optional year: <code>The Matrix (1999)</code> or <code>The Bear — 2022</code>.</p>
+                            <p>Titles are added to <strong>whatever list you’re on now</strong> (<em>My list</em> or <em>Watch together</em>). Default status is <strong>Want to Watch</strong> (you can change it in the preview step).</p>
+                        </div>
                     </div>
 
                     <div class="import-dropzone" id="importDropzone">
@@ -297,6 +306,13 @@
                             <p>Drop your CSV file here or <span class="browse-link">browse</span></p>
                             <span class="file-types">Supports .csv files</span>
                         </div>
+                    </div>
+
+                    <div class="import-paste-panel" id="importPastePanel" style="display: none;">
+                        <label class="import-paste-label" for="pasteTitlesInput">Titles (one per line)</label>
+                        <textarea id="pasteTitlesInput" class="import-paste-textarea" rows="12" placeholder="Past Lives&#10;The Bear (2022)&#10;Spider-Man: Into the Spider-Verse | Logan"></textarea>
+                        <button type="button" class="btn-primary import-paste-btn" id="parsePasteTitlesBtn">Preview import</button>
+                        <p class="import-paste-hint">Tip: <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (or <kbd>⌘</kbd>+<kbd>Enter</kbd>) runs preview from the textarea.</p>
                     </div>
 
                     <div class="import-preview" id="importPreview" style="display: none;">
