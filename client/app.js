@@ -248,16 +248,19 @@ function copyProfileLink() {
         listMode === 'shared'
             ? `${base}?list=shared`
             : `${base}?p=${encodeURIComponent(getActiveProfileSlug())}`;
-    navigator.clipboard.writeText(share).then(
-        () =>
+    const onCopied = () => {
+        if (!hasCloudSync) {
             showToast(
-                listMode === 'shared'
-                    ? 'Together link copied — you both edit the same queue'
-                    : 'Link copied — this is your personal list only',
+                'Link copied. Without Supabase, that URL is empty on her phone — data stays in your browser. Add cloud sync (red banner) or send a JSON backup from Settings.',
                 'success'
-            ),
-        () => prompt('Copy this link:', share)
-    );
+            );
+        } else if (listMode === 'shared') {
+            showToast('Together link copied — same queue for everyone with sync on', 'success');
+        } else {
+            showToast('Link copied — she’ll see your titles after you both use the same ?p= with cloud sync on', 'success');
+        }
+    };
+    navigator.clipboard.writeText(share).then(onCopied, () => prompt('Copy this link:', share));
 }
 
 // ============================================
@@ -274,6 +277,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateProfileBar();
     updateProfileBarForMode();
     updateEmptyStateCopy();
+    updateSyncBanner();
     renderWatchlist();
     updateStats();
     setupEventListeners();
@@ -296,6 +300,12 @@ async function checkServerConfig() {
     } catch (error) {
         console.log('Using client-side API keys');
     }
+}
+
+function updateSyncBanner() {
+    const el = document.getElementById('syncBannerNoCloud');
+    if (!el) return;
+    el.style.display = hasCloudSync ? 'none' : 'block';
 }
 
 // ============================================
@@ -412,6 +422,14 @@ function setupEventListeners() {
     
     // Data management
     exportDataBtn.addEventListener('click', exportData);
+    document.getElementById('importBackupBtn')?.addEventListener('click', () => {
+        document.getElementById('importBackupFile')?.click();
+    });
+    document.getElementById('importBackupFile')?.addEventListener('change', (e) => {
+        const f = e.target.files?.[0];
+        if (f) importBackupFromJsonFile(f);
+        e.target.value = '';
+    });
     clearDataBtn.addEventListener('click', clearAllData);
     bulkFetchBtn.addEventListener('click', bulkFetchDetails);
     
@@ -1123,6 +1141,7 @@ function loadApiKey() {
 async function openSettingsModal() {
     settingsModalOverlay.classList.add('active');
     await checkServerConfig();
+    updateSyncBanner();
     loadApiKey();
     omdbApiKeyInput.value = omdbApiKey;
     document.getElementById('tmdbApiKey').value = tmdbApiKey;
@@ -1250,10 +1269,79 @@ function exportData() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `watchlist-backup-${new Date().toISOString().split('T')[0]}.json`;
+    const slug = listMode === 'shared' ? 'together' : getActiveProfileSlug();
+    a.download = `watchlist-backup-${slug}-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Watchlist exported!', 'success');
+    showToast('Exported! Send this file to import on another device.', 'success');
+}
+
+function importBackupFromJsonFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const parsed = JSON.parse(e.target.result);
+            const items = Array.isArray(parsed) ? parsed : parsed?.items;
+            if (!Array.isArray(items)) {
+                showToast('File must be a JSON array of movies (or { items: [...] })', 'error');
+                return;
+            }
+            const valid = items.filter((it) => it && typeof it.title === 'string' && it.title.trim());
+            if (!valid.length) {
+                showToast('No titles found in file', 'error');
+                return;
+            }
+            const merged = valid.map((it) => ({
+                id: it.id || generateId(),
+                title: it.title.trim(),
+                year: it.year != null ? parseInt(it.year, 10) || null : null,
+                type: it.type === 'series' ? 'series' : 'movie',
+                status: it.status || 'want-to-watch',
+                genre: it.genre || '',
+                myRating: it.myRating != null ? parseFloat(it.myRating) : null,
+                imdbRating: it.imdbRating != null ? parseFloat(it.imdbRating) : null,
+                rtRating: it.rtRating != null ? parseInt(it.rtRating, 10) : null,
+                posterUrl: it.posterUrl || '',
+                imdbLink: it.imdbLink || '',
+                letterboxdLink: it.letterboxdLink || '',
+                rottenTomatoesLink: it.rottenTomatoesLink || '',
+                justWatchLink: it.justWatchLink || '',
+                notes: it.notes || '',
+                dateAdded: it.dateAdded || new Date().toISOString()
+            }));
+
+            const merge = confirm(
+                `Import ${merged.length} titles and MERGE with what you have? OK = merge, Cancel = replace entire list`
+            );
+            if (merge) {
+                let added = 0;
+                for (const it of merged) {
+                    const dup = watchlist.some(
+                        (w) =>
+                            w.title.toLowerCase() === it.title.toLowerCase() &&
+                            (w.year || null) === (it.year || null)
+                    );
+                    if (!dup) {
+                        watchlist.push(it);
+                        added++;
+                    }
+                }
+                showToast(`Merged: ${added} new titles (${merged.length - added} duplicates skipped)`, 'success');
+            } else {
+                watchlist = merged;
+                showToast(`Replaced list with ${merged.length} titles`, 'success');
+            }
+            saveWatchlist();
+            if (hasCloudSync) pushWatchlistToCloud();
+            renderWatchlist();
+            updateStats();
+            closeSettingsModal();
+        } catch (err) {
+            showToast('Invalid JSON file', 'error');
+            console.error(err);
+        }
+    };
+    reader.readAsText(file);
 }
 
 function clearAllData() {

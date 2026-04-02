@@ -11,6 +11,13 @@
 </head>
 <body>
     <div class="app">
+        <div class="sync-banner" id="syncBannerNoCloud" style="display: none;" role="status">
+            <div class="sync-banner-inner">
+                <p><strong>Why your shared link looks empty:</strong> the URL only picks a list <em>name</em>. Your movies are saved <strong>in this browser</strong> until you turn on cloud sync.</p>
+                <p class="sync-banner-steps"><strong>To share the same list with your partner via a link:</strong> add a free <a href="https://supabase.com" target="_blank" rel="noopener">Supabase</a> project, run <code>supabase-watchlists.sql</code>, then set <code>SUPABASE_URL</code> + <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel → Environment Variables and redeploy.</p>
+                <p class="sync-banner-alt"><strong>No database?</strong> Settings → <strong>Export Watchlist</strong>, send her the <code>.json</code> file → <strong>Import backup</strong> on her phone (use the same <code>?p=</code> profile if you want one list).</p>
+            </div>
+        </div>
         <!-- Header -->
         <header class="header">
             <div class="header-content">
@@ -408,6 +415,7 @@
                     
                     <div class="setting-section">
                         <h3>📦 Data Management</h3>
+                        <p class="setting-desc">Share with someone who doesn’t have cloud sync: export JSON and send the file; they use Import backup on the same or another device.</p>
                         <div class="data-actions">
                             <button type="button" class="btn-secondary" id="exportDataBtn">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
@@ -417,6 +425,15 @@
                                 </svg>
                                 Export Watchlist
                             </button>
+                            <button type="button" class="btn-secondary" id="importBackupBtn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                Import backup (.json)
+                            </button>
+                            <input type="file" id="importBackupFile" accept=".json,application/json" hidden>
                             <button type="button" class="btn-danger" id="clearDataBtn">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                                     <polyline points="3 6 5 6 21 6"/>

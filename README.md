@@ -11,6 +11,12 @@ One site for **your** movies and shows: **import your backlog** (Letterboxd / IM
 
 **Privacy:** Treat `?p=...` like a weak password—use a long random slug if you care who can guess the URL.
 
+### “I copied the link but my girlfriend sees an empty list”
+
+The URL does **not** contain your movies. It only selects which list name to open. Your rows are stored **in the browser** until you add **Supabase** + env vars on the server—then the same `?p=` (or `?list=shared`) loads the same data from the database on any device.
+
+**Quick workaround without a database:** you **Export Watchlist** (JSON) in Settings, send her the file (AirDrop, WhatsApp, etc.), she opens your site, switches to the same profile if needed, and uses **Import backup (.json)**.
+
 ## 📁 Project Structure
 
 ```
@@ -63,6 +69,81 @@ npm start
 # 4. Open http://localhost:3000
 ```
 
+For **cloud sync** locally, add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to your `.env` file (see the Supabase section below).
+
+---
+
+## Supabase setup (cloud sync)
+
+This stores each watchlist in a Postgres database so **shared links show real data** on any phone or browser. The app never puts your Supabase **service role** key in the frontend—only your Node server uses it.
+
+### 1. Create a Supabase project
+
+1. Go to [supabase.com](https://supabase.com) and sign up / log in.
+2. Click **New project**.
+3. Choose an **Organization**, **Name** (e.g. `watchlist`), **Database password** (save it somewhere safe—you rarely need it for this app), and **Region** close to you.
+4. Click **Create new project** and wait until the dashboard says the project is ready (usually 1–2 minutes).
+
+### 2. Create the `watchlists` table
+
+1. In the Supabase sidebar, open **SQL Editor**.
+2. Click **New query**.
+3. Open the file **`supabase-watchlists.sql`** from this repo, copy **all** of its contents, paste into the editor, and click **Run** (or press the shortcut shown in the UI).
+4. You should see “Success” with no errors.  
+   - This creates a table `public.watchlists` with columns: `profile_slug`, `data` (JSON array of titles), `updated_at`.
+
+### 3. Get the URL and service role key
+
+1. In Supabase, go to **Project Settings** (gear icon) → **API**.
+2. Under **Project URL**, copy the URL (looks like `https://xxxxxxxx.supabase.co`). This is your **`SUPABASE_URL`**.
+3. Under **Project API keys**, find **`service_role`** (**secret**). Click **Reveal**, then copy it. This is your **`SUPABASE_SERVICE_ROLE_KEY`**.
+   - **Important:** The `service_role` key bypasses database row-level rules. Treat it like a password—**never** paste it in client-side code, GitHub, or Discord. Only Vercel/Railway env vars or your local `.env` (which is gitignored).
+
+Do **not** use the `anon` public key for this app’s sync—the server is written to use the service role on the backend only.
+
+### 4. Add variables to Vercel (or your host)
+
+1. Open your project on [Vercel](https://vercel.com) → **Settings** → **Environment Variables**.
+2. Add:
+
+   | Name | Value |
+   |------|--------|
+   | `SUPABASE_URL` | Paste the **Project URL** from step 3 |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Paste the **service_role** secret from step 3 |
+
+3. Enable them for **Production** (and **Preview** if you want preview deployments to sync too).
+
+4. **Redeploy** the latest deployment (Deployments → … → Redeploy), or push a small commit so a new build runs. Env vars are applied at build/runtime for new deployments.
+
+### 5. Add variables for local development (optional)
+
+In the project root, copy `.env.example` to `.env` (or use `server/.env`—the server loads both) and add:
+
+```env
+SUPABASE_URL=https://xxxxxxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+Run `npm start` again. The red **“link is empty”** banner should disappear when `/api/config` returns `"hasCloudSync": true`.
+
+### 6. Verify it works
+
+1. Open your deployed site (or `http://localhost:3000`).
+2. Add or import a title, wait a second (sync is debounced).
+3. Open the same site in an **incognito / another browser** with the **same** `?p=your-profile` URL—you should see the same titles.
+4. **Watch together** uses a fixed slug (default `watch-together`) in the database—both of you can use `?list=shared` after sync is on.
+
+### Troubleshooting
+
+| Problem | What to check |
+|---------|----------------|
+| Still see the red banner | Redeploy after adding env vars; confirm variable names match exactly (no extra spaces). |
+| `500` on `/api/sync/...` | SQL not run, or wrong URL/key; check Vercel **Functions** logs. |
+| Empty list on partner’s phone | Same `?p=` string; partner must use the exact profile slug you use. |
+| Want a new empty database | You can truncate in SQL Editor: `truncate table public.watchlists restart identity;` (destructive). |
+
+---
+
 ## 🚀 Deployment Guide
 
 ### Deploy to CodeSandbox (Recommended)
@@ -89,6 +170,8 @@ git push origin main
    |-----|-------|
    | `OMDB_API_KEY` | your_omdb_key_here |
    | `TMDB_API_KEY` | your_tmdb_key_here |
+   | `SUPABASE_URL` | (optional) See **Supabase setup** in this README |
+   | `SUPABASE_SERVICE_ROLE_KEY` | (optional) `service_role` secret |
 4. Click **"Save"**
 
 **Step 4: Done!**
@@ -115,10 +198,10 @@ Vercel treats this repo as an **Express** app. Static files must live in `public
 |------|--------|
 | `OMDB_API_KEY` | Your OMDB key |
 | `TMDB_API_KEY` | Your TMDB **API key** (not the word `NULL` — get a real key from TMDB) |
-| `SUPABASE_URL` | (Optional) From [Supabase](https://supabase.com) → Project Settings → API |
-| `SUPABASE_SERVICE_ROLE_KEY` | (Optional) **service_role** secret — server only |
+| `SUPABASE_URL` | (Optional—see **Supabase setup** section above) Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | (Optional) **service_role** secret from Supabase → Settings → API |
 
-To enable **sync across devices** (and backup in the cloud), create a free [Supabase](https://supabase.com) project, open **SQL Editor**, run `supabase-watchlists.sql`, then add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` above. Without Supabase, lists are stored **only in that browser** (profiles still isolate your lists vs hers on the same machine).
+Follow the full **Supabase setup (cloud sync)** section in this README first, then paste the two values here. Without them, lists stay **browser-only** and shared links look empty on other devices.
 
 Apply these vars to **Production** (and **Preview** if you use preview URLs).
 
