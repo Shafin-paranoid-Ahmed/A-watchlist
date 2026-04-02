@@ -277,7 +277,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateProfileBar();
     updateProfileBarForMode();
     updateEmptyStateCopy();
-    updateSyncBanner();
     renderWatchlist();
     updateStats();
     setupEventListeners();
@@ -300,12 +299,6 @@ async function checkServerConfig() {
     } catch (error) {
         console.log('Using client-side API keys');
     }
-}
-
-function updateSyncBanner() {
-    const el = document.getElementById('syncBannerNoCloud');
-    if (!el) return;
-    el.style.display = hasCloudSync ? 'none' : 'block';
 }
 
 // ============================================
@@ -1167,7 +1160,6 @@ function loadApiKey() {
 async function openSettingsModal() {
     settingsModalOverlay.classList.add('active');
     await checkServerConfig();
-    updateSyncBanner();
     loadApiKey();
     omdbApiKeyInput.value = omdbApiKey;
     document.getElementById('tmdbApiKey').value = tmdbApiKey;

@@ -98,47 +98,6 @@ body::before {
     padding: var(--space-lg);
 }
 
-.sync-banner {
-    background: rgba(229, 9, 20, 0.12);
-    border: 1px solid rgba(229, 9, 20, 0.45);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    margin-bottom: var(--space-xl);
-    color: var(--text-secondary);
-    line-height: 1.65;
-    font-size: 0.92rem;
-}
-
-.sync-banner-inner p {
-    margin: 0 0 var(--space-sm) 0;
-}
-
-.sync-banner-inner p:last-child {
-    margin-bottom: 0;
-}
-
-.sync-banner strong {
-    color: var(--text-primary);
-}
-
-.sync-banner code {
-    background: var(--bg-card);
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-size: 0.85em;
-    color: var(--accent-gold);
-}
-
-.sync-banner a {
-    color: var(--accent-gold);
-}
-
-.sync-banner-steps,
-.sync-banner-alt {
-    font-size: 0.88rem;
-    color: var(--text-muted);
-}
-
 /* ============================================
    HEADER
    ============================================ */
