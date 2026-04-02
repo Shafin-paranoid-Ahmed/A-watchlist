@@ -2,8 +2,15 @@
 // WATCHLIST APP - Main JavaScript
 // ============================================
 
-// Storage key
+// Storage keys
 const STORAGE_KEY = 'watchlist_data';
+const OMDB_API_KEY_STORAGE = 'omdb_api_key';
+const TMDB_API_KEY_STORAGE = 'tmdb_api_key';
+
+// API URLs
+const OMDB_BASE_URL = 'https://www.omdbapi.com/';
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/';
 
 // DOM Elements
 const watchlistGrid = document.getElementById('watchlistGrid');
@@ -30,6 +37,21 @@ const previewTable = document.getElementById('previewTable');
 const cancelImportBtn = document.getElementById('cancelImport');
 const confirmImportBtn = document.getElementById('confirmImport');
 
+// Settings Modal Elements
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsModalOverlay = document.getElementById('settingsModalOverlay');
+const closeSettingsModalBtn = document.getElementById('closeSettingsModal');
+const omdbApiKeyInput = document.getElementById('omdbApiKey');
+const saveApiKeyBtn = document.getElementById('saveApiKey');
+const apiKeyStatus = document.getElementById('apiKeyStatus');
+const exportDataBtn = document.getElementById('exportDataBtn');
+const clearDataBtn = document.getElementById('clearDataBtn');
+const bulkFetchBtn = document.getElementById('bulkFetchBtn');
+
+// Search Elements
+const searchTitleBtn = document.getElementById('searchTitleBtn');
+const searchResults = document.getElementById('searchResults');
+
 // Stats elements
 const totalCount = document.getElementById('totalCount');
 const watchedCount = document.getElementById('watchedCount');
@@ -43,6 +65,9 @@ let searchQuery = '';
 let editingId = null;
 let currentImportSource = 'letterboxd';
 let pendingImports = [];
+let omdbApiKey = '';
+let tmdbApiKey = '';
+let detectedImportStatus = 'watched';
 
 // ============================================
 // INITIALIZATION
@@ -50,6 +75,7 @@ let pendingImports = [];
 
 document.addEventListener('DOMContentLoaded', () => {
     loadWatchlist();
+    loadApiKey();
     renderWatchlist();
     updateStats();
     setupEventListeners();
@@ -147,6 +173,45 @@ function setupEventListeners() {
     // Import actions
     cancelImportBtn.addEventListener('click', resetImport);
     confirmImportBtn.addEventListener('click', executeImport);
+    
+    // Settings modal
+    settingsBtn.addEventListener('click', openSettingsModal);
+    closeSettingsModalBtn.addEventListener('click', closeSettingsModal);
+    settingsModalOverlay.addEventListener('click', (e) => {
+        if (e.target === settingsModalOverlay) closeSettingsModal();
+    });
+    
+    // API keys
+    saveApiKeyBtn.addEventListener('click', saveApiKey);
+    omdbApiKeyInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') saveApiKey();
+    });
+    
+    document.getElementById('saveTmdbApiKey').addEventListener('click', saveTmdbApiKey);
+    document.getElementById('tmdbApiKey').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') saveTmdbApiKey();
+    });
+    
+    // Data management
+    exportDataBtn.addEventListener('click', exportData);
+    clearDataBtn.addEventListener('click', clearAllData);
+    bulkFetchBtn.addEventListener('click', bulkFetchDetails);
+    
+    // Title search
+    searchTitleBtn.addEventListener('click', searchForTitle);
+    document.getElementById('title').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            searchForTitle();
+        }
+    });
+    
+    // Close search results when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.title-search-group')) {
+            searchResults.classList.remove('active');
+        }
+    });
 }
 
 // ============================================
@@ -175,8 +240,10 @@ function getSampleData() {
             year: 2010,
             type: "movie",
             status: "watched",
-            genre: "Sci-Fi, Thriller",
+            genre: "Action, Adventure, Sci-Fi",
             myRating: 9.2,
+            imdbRating: 8.8,
+            rtRating: 87,
             posterUrl: "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
             imdbLink: "https://www.imdb.com/title/tt1375666/",
             letterboxdLink: "https://letterboxd.com/film/inception/",
@@ -191,8 +258,10 @@ function getSampleData() {
             year: 2008,
             type: "series",
             status: "watched",
-            genre: "Crime, Drama",
+            genre: "Crime, Drama, Thriller",
             myRating: 9.8,
+            imdbRating: 9.5,
+            rtRating: 96,
             posterUrl: "https://m.media-amazon.com/images/M/MV5BYmQ4YWMxYjUtNjZmYi00MDQ1LWFjMjMtNjA5ZDdiYjdiODU5XkEyXkFqcGdeQXVyMTMzNDExODE5._V1_SX300.jpg",
             imdbLink: "https://www.imdb.com/title/tt0903747/",
             letterboxdLink: "",
@@ -207,8 +276,10 @@ function getSampleData() {
             year: 2024,
             type: "movie",
             status: "want-to-watch",
-            genre: "Sci-Fi, Adventure",
+            genre: "Action, Adventure, Drama",
             myRating: null,
+            imdbRating: 8.8,
+            rtRating: 92,
             posterUrl: "https://m.media-amazon.com/images/M/MV5BN2QyZGU4ZDctOWMzMy00NTc5LThlOGQtODhmNDI1NmY5YzAwXkEyXkFqcGdeQXVyMDM2NDM2MQ@@._V1_SX300.jpg",
             imdbLink: "https://www.imdb.com/title/tt15239678/",
             letterboxdLink: "https://letterboxd.com/film/dune-part-two/",
@@ -223,8 +294,10 @@ function getSampleData() {
             year: 2023,
             type: "series",
             status: "watching",
-            genre: "Drama, Horror",
+            genre: "Action, Adventure, Drama",
             myRating: 8.5,
+            imdbRating: 8.8,
+            rtRating: 96,
             posterUrl: "https://m.media-amazon.com/images/M/MV5BZGUzYTI3M2EtZmM0Yy00NGUyLWI4ODEtN2Q3ZGJlYzhhZjU3XkEyXkFqcGdeQXVyNTM0OTY1OQ@@._V1_SX300.jpg",
             imdbLink: "https://www.imdb.com/title/tt3581920/",
             letterboxdLink: "",
@@ -310,7 +383,13 @@ function createCard(item) {
                 ${item.myRating ? `
                     <div class="card-rating">
                         <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                        <span>${item.myRating}</span>
+                        <span>My: ${item.myRating}</span>
+                    </div>
+                ` : ''}
+                ${(item.imdbRating || item.rtRating) ? `
+                    <div class="card-ratings">
+                        ${item.imdbRating ? `<span class="card-imdb-rating">⭐ IMDB ${item.imdbRating}</span>` : ''}
+                        ${item.rtRating ? `<span class="card-rt-rating">🍅 ${item.rtRating}%</span>` : ''}
                     </div>
                 ` : ''}
                 ${item.notes ? `<p class="card-notes">${escapeHtml(item.notes)}</p>` : ''}
@@ -391,6 +470,8 @@ function openModal(id = null) {
         document.getElementById('status').value = item.status;
         document.getElementById('genre').value = item.genre || '';
         document.getElementById('myRating').value = item.myRating || '';
+        document.getElementById('imdbRating').value = item.imdbRating || '';
+        document.getElementById('rtRating').value = item.rtRating || '';
         document.getElementById('posterUrl').value = item.posterUrl || '';
         document.getElementById('imdbLink').value = item.imdbLink || '';
         document.getElementById('letterboxdLink').value = item.letterboxdLink || '';
@@ -423,6 +504,8 @@ function handleFormSubmit(e) {
         status: document.getElementById('status').value,
         genre: document.getElementById('genre').value.trim(),
         myRating: parseFloat(document.getElementById('myRating').value) || null,
+        imdbRating: parseFloat(document.getElementById('imdbRating').value) || null,
+        rtRating: parseInt(document.getElementById('rtRating').value) || null,
         posterUrl: document.getElementById('posterUrl').value.trim(),
         imdbLink: document.getElementById('imdbLink').value.trim(),
         letterboxdLink: document.getElementById('letterboxdLink').value.trim(),
@@ -602,26 +685,36 @@ function transformData(data, source) {
 }
 
 function transformLetterboxd(data) {
+    // Detect file type based on columns present
+    const sampleRow = data[0] || {};
+    const columns = Object.keys(sampleRow).map(k => k.toLowerCase());
+    
+    // Determine default status based on CSV type
+    let defaultStatus = 'watched';
+    if (columns.includes('watched date') || columns.includes('diary')) {
+        defaultStatus = 'watched'; // diary.csv
+    } else if (columns.includes('rating') && !columns.includes('watched date')) {
+        defaultStatus = 'watched'; // ratings.csv - you rated it, so you watched it
+    } else if (!columns.includes('rating') && !columns.includes('watched date')) {
+        defaultStatus = 'want-to-watch'; // watchlist.csv - no rating or watch date
+    }
+    
+    // Store detected status for UI hint
+    detectedImportStatus = defaultStatus;
+    
     return data.map(row => {
-        // Letterboxd exports can have different formats
         const title = row.name || row.title || row.film || '';
         const year = parseInt(row.year) || null;
         const rating = row.rating ? parseFloat(row.rating) * 2 : null; // Letterboxd uses 0-5, we use 0-10
         const letterboxdUri = row['letterboxd uri'] || row.uri || '';
         const watchedDate = row['watched date'] || row.date || '';
         
-        // Determine status based on available data
-        let status = 'watched';
-        if (row.watchlist || (!rating && !watchedDate)) {
-            status = 'want-to-watch';
-        }
-        
         return {
             id: generateId(),
             title: title,
             year: year,
-            type: 'movie', // Letterboxd is primarily movies
-            status: status,
+            type: 'movie',
+            status: defaultStatus, // Will be overridden by user selection if not auto
             genre: '',
             myRating: rating,
             posterUrl: '',
@@ -636,6 +729,16 @@ function transformLetterboxd(data) {
 }
 
 function transformIMDB(data) {
+    // Detect if this is a watchlist or ratings export
+    const sampleRow = data[0] || {};
+    const columns = Object.keys(sampleRow).map(k => k.toLowerCase());
+    
+    // If there's no "your rating" column or all ratings are empty, likely a watchlist
+    const hasRatings = data.some(row => row['your rating'] && row['your rating'] !== '');
+    let defaultStatus = hasRatings ? 'watched' : 'want-to-watch';
+    
+    detectedImportStatus = defaultStatus;
+    
     return data.map(row => {
         const title = row.title || row.name || '';
         const year = parseInt(row.year) || null;
@@ -650,11 +753,8 @@ function transformIMDB(data) {
             type = 'series';
         }
         
-        // Determine status
-        let status = 'watched';
-        if (!yourRating && row.watchlist) {
-            status = 'want-to-watch';
-        }
+        // Individual item status - if no rating, probably watchlist
+        let status = yourRating ? 'watched' : defaultStatus;
         
         return {
             id: generateId(),
@@ -676,11 +776,17 @@ function transformIMDB(data) {
 }
 
 function transformCustomCSV(data) {
+    // Check if status column exists
+    const sampleRow = data[0] || {};
+    const hasStatus = sampleRow.status !== undefined;
+    
+    detectedImportStatus = hasStatus ? 'auto' : 'want-to-watch';
+    
     return data.map(row => {
         const title = row.title || row.name || row.film || row.movie || '';
         const year = parseInt(row.year || row.release_year) || null;
         const type = (row.type || 'movie').toLowerCase().includes('series') ? 'series' : 'movie';
-        const status = normalizeStatus(row.status);
+        const status = row.status ? normalizeStatus(row.status) : 'want-to-watch';
         const rating = parseFloat(row.rating || row.my_rating || row.score) || null;
         const genre = row.genre || row.genres || '';
         
@@ -723,28 +829,42 @@ function showPreview() {
     document.getElementById('previewCount').textContent = `(${pendingImports.length} items)`;
     document.getElementById('importCountBtn').textContent = pendingImports.length;
     
+    // Set the status dropdown based on detected status
+    const importStatusSelect = document.getElementById('importStatus');
+    importStatusSelect.value = 'auto';
+    
+    // Update the auto option text to show detected status
+    const autoOption = importStatusSelect.querySelector('option[value="auto"]');
+    const statusLabels = {
+        'watched': 'Watched',
+        'watching': 'Watching',
+        'want-to-watch': 'Want to Watch'
+    };
+    autoOption.textContent = `Auto-detect (${statusLabels[detectedImportStatus]})`;
+    
     // Build preview table
     const thead = previewTable.querySelector('thead');
     const tbody = previewTable.querySelector('tbody');
     
-    thead.innerHTML = '<tr><th>Title</th><th>Year</th><th>Type</th><th>Rating</th></tr>';
+    thead.innerHTML = '<tr><th>Title</th><th>Year</th><th>Type</th><th>Rating</th><th>Status</th></tr>';
     tbody.innerHTML = pendingImports.slice(0, 50).map(item => `
         <tr>
             <td>${escapeHtml(item.title)}</td>
             <td>${item.year || '-'}</td>
             <td>${item.type}</td>
             <td>${item.myRating || '-'}</td>
+            <td>${statusLabels[item.status] || item.status}</td>
         </tr>
     `).join('');
     
     if (pendingImports.length > 50) {
-        tbody.innerHTML += `<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">... and ${pendingImports.length - 50} more</td></tr>`;
+        tbody.innerHTML += `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">... and ${pendingImports.length - 50} more</td></tr>`;
     }
 }
 
 function executeImport() {
     const skipDuplicates = document.getElementById('skipDuplicates').checked;
-    const markAsWatched = document.getElementById('markAsWatched').checked;
+    const importStatus = document.getElementById('importStatus').value;
     
     let imported = 0;
     let skipped = 0;
@@ -762,9 +882,9 @@ function executeImport() {
             }
         }
         
-        // Override status if checkbox is checked
-        if (markAsWatched) {
-            item.status = 'watched';
+        // Override status if not auto-detect
+        if (importStatus !== 'auto') {
+            item.status = importStatus;
         }
         
         watchlist.push(item);
@@ -779,6 +899,606 @@ function executeImport() {
     let message = `Successfully imported ${imported} titles!`;
     if (skipped > 0) {
         message += ` (${skipped} duplicates skipped)`;
+    }
+    showToast(message, 'success');
+}
+
+// ============================================
+// SETTINGS & API
+// ============================================
+
+function loadApiKey() {
+    omdbApiKey = localStorage.getItem(OMDB_API_KEY_STORAGE) || '';
+    tmdbApiKey = localStorage.getItem(TMDB_API_KEY_STORAGE) || '';
+    if (omdbApiKeyInput) {
+        omdbApiKeyInput.value = omdbApiKey;
+    }
+    const tmdbInput = document.getElementById('tmdbApiKey');
+    if (tmdbInput) {
+        tmdbInput.value = tmdbApiKey;
+    }
+}
+
+function openSettingsModal() {
+    settingsModalOverlay.classList.add('active');
+    omdbApiKeyInput.value = omdbApiKey;
+    document.getElementById('tmdbApiKey').value = tmdbApiKey;
+    updateApiKeyStatus();
+}
+
+function closeSettingsModal() {
+    settingsModalOverlay.classList.remove('active');
+}
+
+function updateApiKeyStatus() {
+    // OMDB status
+    if (omdbApiKey) {
+        apiKeyStatus.textContent = '✓ API key is set';
+        apiKeyStatus.className = 'api-key-status success';
+    } else {
+        apiKeyStatus.textContent = '⚠ No API key set';
+        apiKeyStatus.className = 'api-key-status error';
+    }
+    
+    // TMDB status
+    const tmdbStatus = document.getElementById('tmdbApiKeyStatus');
+    if (tmdbApiKey) {
+        tmdbStatus.textContent = '✓ API key is set';
+        tmdbStatus.className = 'api-key-status success';
+    } else {
+        tmdbStatus.textContent = '⚠ No API key set';
+        tmdbStatus.className = 'api-key-status error';
+    }
+}
+
+async function saveApiKey() {
+    const key = omdbApiKeyInput.value.trim();
+    
+    if (!key) {
+        omdbApiKey = '';
+        localStorage.removeItem(OMDB_API_KEY_STORAGE);
+        updateApiKeyStatus();
+        showToast('OMDB API key removed', 'success');
+        return;
+    }
+    
+    // Test the API key
+    apiKeyStatus.textContent = 'Testing API key...';
+    apiKeyStatus.className = 'api-key-status';
+    
+    try {
+        const response = await fetch(`${OMDB_BASE_URL}?apikey=${key}&t=Inception`);
+        const data = await response.json();
+        
+        if (data.Response === 'True') {
+            omdbApiKey = key;
+            localStorage.setItem(OMDB_API_KEY_STORAGE, key);
+            apiKeyStatus.textContent = '✓ API key verified and saved!';
+            apiKeyStatus.className = 'api-key-status success';
+            showToast('OMDB API key saved!', 'success');
+        } else if (data.Error === 'Invalid API key!') {
+            apiKeyStatus.textContent = '✗ Invalid API key';
+            apiKeyStatus.className = 'api-key-status error';
+            showToast('Invalid API key', 'error');
+        } else {
+            throw new Error(data.Error);
+        }
+    } catch (error) {
+        apiKeyStatus.textContent = '✗ Could not verify API key';
+        apiKeyStatus.className = 'api-key-status error';
+        showToast('Error testing API key', 'error');
+    }
+}
+
+async function saveTmdbApiKey() {
+    const key = document.getElementById('tmdbApiKey').value.trim();
+    const tmdbStatus = document.getElementById('tmdbApiKeyStatus');
+    
+    if (!key) {
+        tmdbApiKey = '';
+        localStorage.removeItem(TMDB_API_KEY_STORAGE);
+        updateApiKeyStatus();
+        showToast('TMDB API key removed', 'success');
+        return;
+    }
+    
+    // Test the API key
+    tmdbStatus.textContent = 'Testing API key...';
+    tmdbStatus.className = 'api-key-status';
+    
+    try {
+        const response = await fetch(`${TMDB_BASE_URL}/movie/550?api_key=${key}`);
+        const data = await response.json();
+        
+        if (data.id) {
+            tmdbApiKey = key;
+            localStorage.setItem(TMDB_API_KEY_STORAGE, key);
+            tmdbStatus.textContent = '✓ API key verified and saved!';
+            tmdbStatus.className = 'api-key-status success';
+            showToast('TMDB API key saved!', 'success');
+        } else if (data.status_code === 7) {
+            tmdbStatus.textContent = '✗ Invalid API key';
+            tmdbStatus.className = 'api-key-status error';
+            showToast('Invalid TMDB API key', 'error');
+        } else {
+            throw new Error(data.status_message);
+        }
+    } catch (error) {
+        tmdbStatus.textContent = '✗ Could not verify API key';
+        tmdbStatus.className = 'api-key-status error';
+        showToast('Error testing TMDB API key', 'error');
+    }
+}
+
+function exportData() {
+    const data = JSON.stringify(watchlist, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `watchlist-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Watchlist exported!', 'success');
+}
+
+function clearAllData() {
+    if (confirm('Are you sure you want to delete ALL your watchlist data? This cannot be undone!')) {
+        if (confirm('Really delete everything? Type OK to confirm.')) {
+            watchlist = [];
+            saveWatchlist();
+            renderWatchlist();
+            updateStats();
+            closeSettingsModal();
+            showToast('All data cleared', 'success');
+        }
+    }
+}
+
+// ============================================
+// TMDB API INTEGRATION
+// ============================================
+
+async function searchTMDB(title, year = null) {
+    if (!tmdbApiKey) return null;
+    
+    let url = `${TMDB_BASE_URL}/search/multi?api_key=${tmdbApiKey}&query=${encodeURIComponent(title)}`;
+    if (year) url += `&year=${year}`;
+    
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+            // Filter to only movies and TV shows
+            return data.results.filter(r => r.media_type === 'movie' || r.media_type === 'tv');
+        }
+        return [];
+    } catch (error) {
+        console.error('TMDB search error:', error);
+        return [];
+    }
+}
+
+async function getTMDBDetails(id, mediaType) {
+    if (!tmdbApiKey) return null;
+    
+    try {
+        // Get main details
+        const response = await fetch(`${TMDB_BASE_URL}/${mediaType}/${id}?api_key=${tmdbApiKey}&append_to_response=external_ids,credits`);
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('TMDB details error:', error);
+        return null;
+    }
+}
+
+function getTMDBPosterUrl(posterPath, size = 'w500') {
+    if (!posterPath) return '';
+    return `${TMDB_IMAGE_BASE}${size}${posterPath}`;
+}
+
+// ============================================
+// OMDB API INTEGRATION
+// ============================================
+
+async function searchOMDB(title, year = null) {
+    if (!omdbApiKey) return null;
+    
+    let url = `${OMDB_BASE_URL}?apikey=${omdbApiKey}&s=${encodeURIComponent(title)}`;
+    if (year) url += `&y=${year}`;
+    
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.Response === 'True') {
+            return data.Search;
+        } else {
+            return [];
+        }
+    } catch (error) {
+        console.error('OMDB search error:', error);
+        return [];
+    }
+}
+
+async function getOMDBDetails(imdbId) {
+    if (!omdbApiKey || !imdbId) return null;
+    
+    try {
+        const response = await fetch(`${OMDB_BASE_URL}?apikey=${omdbApiKey}&i=${imdbId}&plot=short`);
+        const data = await response.json();
+        
+        if (data.Response === 'True') {
+            return data;
+        }
+        return null;
+    } catch (error) {
+        console.error('OMDB details error:', error);
+        return null;
+    }
+}
+
+async function getOMDBByTitle(title, year = null) {
+    if (!omdbApiKey) return null;
+    
+    let url = `${OMDB_BASE_URL}?apikey=${omdbApiKey}&t=${encodeURIComponent(title)}`;
+    if (year) url += `&y=${year}`;
+    
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.Response === 'True') {
+            return data;
+        }
+        return null;
+    } catch (error) {
+        console.error('OMDB details error:', error);
+        return null;
+    }
+}
+
+// ============================================
+// UNIFIED SEARCH (TMDB + OMDB)
+// ============================================
+
+async function searchForTitle() {
+    const titleInput = document.getElementById('title');
+    const yearInput = document.getElementById('year');
+    const title = titleInput.value.trim();
+    
+    if (!title) {
+        showToast('Please enter a title to search', 'error');
+        return;
+    }
+    
+    if (!tmdbApiKey && !omdbApiKey) {
+        showToast('Please set at least one API key in Settings', 'error');
+        openSettingsModal();
+        return;
+    }
+    
+    // Show loading state
+    searchTitleBtn.classList.add('loading');
+    searchTitleBtn.disabled = true;
+    
+    const year = yearInput.value || null;
+    let results = [];
+    
+    // Try TMDB first (better posters)
+    if (tmdbApiKey) {
+        const tmdbResults = await searchTMDB(title, year);
+        if (tmdbResults && tmdbResults.length > 0) {
+            results = tmdbResults.slice(0, 6).map(r => ({
+                id: r.id,
+                title: r.title || r.name,
+                year: (r.release_date || r.first_air_date || '').split('-')[0],
+                type: r.media_type === 'tv' ? 'series' : 'movie',
+                mediaType: r.media_type,
+                poster: getTMDBPosterUrl(r.poster_path, 'w185'),
+                rating: r.vote_average ? r.vote_average.toFixed(1) : null,
+                source: 'tmdb'
+            }));
+        }
+    }
+    
+    // Fallback to OMDB if no TMDB results
+    if (results.length === 0 && omdbApiKey) {
+        const omdbResults = await searchOMDB(title, year);
+        if (omdbResults && omdbResults.length > 0) {
+            results = omdbResults.slice(0, 6).map(r => ({
+                id: r.imdbID,
+                title: r.Title,
+                year: r.Year,
+                type: r.Type === 'series' ? 'series' : 'movie',
+                poster: r.Poster !== 'N/A' ? r.Poster : '',
+                rating: null,
+                source: 'omdb'
+            }));
+        }
+    }
+    
+    searchTitleBtn.classList.remove('loading');
+    searchTitleBtn.disabled = false;
+    
+    if (results.length === 0) {
+        searchResults.innerHTML = '<div class="no-results">No results found. Try a different search term.</div>';
+        searchResults.classList.add('active');
+        return;
+    }
+    
+    renderSearchResults(results);
+}
+
+function renderSearchResults(results) {
+    searchResults.innerHTML = results.map(result => {
+        return `
+            <div class="search-result-item" data-id="${result.id}" data-source="${result.source}" data-media-type="${result.mediaType || result.type}">
+                <div class="search-result-poster">
+                    ${result.poster 
+                        ? `<img src="${result.poster}" alt="${result.title}">`
+                        : `<span class="search-result-poster-placeholder">🎬</span>`
+                    }
+                </div>
+                <div class="search-result-info">
+                    <div class="search-result-title">${escapeHtml(result.title)}</div>
+                    <div class="search-result-meta">
+                        <span>${result.year || 'N/A'}</span>
+                        <span>${result.type}</span>
+                        ${result.rating ? `<span class="search-result-rating">⭐ ${result.rating}</span>` : ''}
+                        <span class="search-result-source">${result.source.toUpperCase()}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    searchResults.classList.add('active');
+    
+    // Add click handlers
+    searchResults.querySelectorAll('.search-result-item').forEach(item => {
+        item.addEventListener('click', () => {
+            selectSearchResult(item.dataset.id, item.dataset.source, item.dataset.mediaType);
+        });
+    });
+}
+
+async function selectSearchResult(id, source, mediaType) {
+    searchResults.classList.remove('active');
+    
+    // Show loading
+    searchTitleBtn.classList.add('loading');
+    searchTitleBtn.disabled = true;
+    
+    let title = '', year = '', type = 'movie', genre = '', posterUrl = '', imdbId = '', imdbRating = null, rtRating = null, plot = '', runtime = '', director = '';
+    
+    if (source === 'tmdb') {
+        // Fetch from TMDB
+        const tmdbDetails = await getTMDBDetails(id, mediaType === 'series' ? 'tv' : 'movie');
+        
+        if (tmdbDetails) {
+            title = tmdbDetails.title || tmdbDetails.name || '';
+            year = (tmdbDetails.release_date || tmdbDetails.first_air_date || '').split('-')[0];
+            type = mediaType === 'tv' || mediaType === 'series' ? 'series' : 'movie';
+            genre = tmdbDetails.genres ? tmdbDetails.genres.map(g => g.name).join(', ') : '';
+            posterUrl = getTMDBPosterUrl(tmdbDetails.poster_path, 'w500');
+            plot = tmdbDetails.overview || '';
+            runtime = tmdbDetails.runtime ? `${tmdbDetails.runtime} min` : '';
+            
+            // Get IMDB ID from external_ids
+            imdbId = tmdbDetails.external_ids?.imdb_id || '';
+            
+            // Director from credits
+            if (tmdbDetails.credits?.crew) {
+                const directors = tmdbDetails.credits.crew.filter(c => c.job === 'Director');
+                director = directors.map(d => d.name).join(', ');
+            }
+            
+            // Now fetch OMDB for IMDB rating and RT score
+            if (imdbId && omdbApiKey) {
+                const omdbDetails = await getOMDBDetails(imdbId);
+                if (omdbDetails) {
+                    if (omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {
+                        imdbRating = parseFloat(omdbDetails.imdbRating);
+                    }
+                    if (omdbDetails.Ratings) {
+                        const rt = omdbDetails.Ratings.find(r => r.Source === 'Rotten Tomatoes');
+                        if (rt) rtRating = parseInt(rt.Value);
+                    }
+                }
+            } else if (omdbApiKey) {
+                // Try to get OMDB by title if no IMDB ID
+                const omdbDetails = await getOMDBByTitle(title, year);
+                if (omdbDetails) {
+                    imdbId = omdbDetails.imdbID || '';
+                    if (omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {
+                        imdbRating = parseFloat(omdbDetails.imdbRating);
+                    }
+                    if (omdbDetails.Ratings) {
+                        const rt = omdbDetails.Ratings.find(r => r.Source === 'Rotten Tomatoes');
+                        if (rt) rtRating = parseInt(rt.Value);
+                    }
+                }
+            }
+        }
+    } else {
+        // OMDB source
+        const omdbDetails = await getOMDBDetails(id);
+        
+        if (omdbDetails) {
+            title = omdbDetails.Title || '';
+            year = omdbDetails.Year ? parseInt(omdbDetails.Year) : '';
+            type = omdbDetails.Type === 'series' ? 'series' : 'movie';
+            genre = omdbDetails.Genre || '';
+            posterUrl = omdbDetails.Poster !== 'N/A' ? omdbDetails.Poster : '';
+            imdbId = id;
+            plot = omdbDetails.Plot || '';
+            runtime = omdbDetails.Runtime || '';
+            director = omdbDetails.Director || '';
+            
+            if (omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {
+                imdbRating = parseFloat(omdbDetails.imdbRating);
+            }
+            if (omdbDetails.Ratings) {
+                const rt = omdbDetails.Ratings.find(r => r.Source === 'Rotten Tomatoes');
+                if (rt) rtRating = parseInt(rt.Value);
+            }
+            
+            // Try to get better poster from TMDB if available
+            if (tmdbApiKey) {
+                const tmdbResults = await searchTMDB(title, year);
+                if (tmdbResults && tmdbResults.length > 0) {
+                    const bestMatch = tmdbResults[0];
+                    if (bestMatch.poster_path) {
+                        posterUrl = getTMDBPosterUrl(bestMatch.poster_path, 'w500');
+                    }
+                }
+            }
+        }
+    }
+    
+    searchTitleBtn.classList.remove('loading');
+    searchTitleBtn.disabled = false;
+    
+    if (!title) {
+        showToast('Could not fetch details', 'error');
+        return;
+    }
+    
+    // Fill in the form
+    document.getElementById('title').value = title;
+    document.getElementById('year').value = year;
+    document.getElementById('type').value = type;
+    document.getElementById('genre').value = genre;
+    document.getElementById('posterUrl').value = posterUrl;
+    document.getElementById('imdbLink').value = imdbId ? `https://www.imdb.com/title/${imdbId}/` : '';
+    
+    if (imdbRating) {
+        document.getElementById('imdbRating').value = imdbRating;
+    }
+    if (rtRating) {
+        document.getElementById('rtRating').value = rtRating;
+    }
+    
+    // Add plot to notes if empty
+    const notesField = document.getElementById('notes');
+    if (!notesField.value && plot) {
+        notesField.value = plot;
+    }
+    
+    showToast(`Loaded details for "${title}"`, 'success');
+}
+
+async function bulkFetchDetails() {
+    if (!tmdbApiKey && !omdbApiKey) {
+        showToast('Please set at least one API key first', 'error');
+        return;
+    }
+    
+    // Find items missing posters or ratings
+    const itemsToUpdate = watchlist.filter(item => 
+        !item.posterUrl || !item.imdbRating
+    );
+    
+    if (itemsToUpdate.length === 0) {
+        showToast('All items already have posters and ratings!', 'success');
+        return;
+    }
+    
+    const progressDiv = document.getElementById('bulkProgress');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    
+    progressDiv.style.display = 'flex';
+    bulkFetchBtn.disabled = true;
+    
+    let updated = 0;
+    let failed = 0;
+    
+    for (let i = 0; i < itemsToUpdate.length; i++) {
+        const item = itemsToUpdate[i];
+        progressText.textContent = `${i + 1} / ${itemsToUpdate.length}`;
+        progressFill.style.width = `${((i + 1) / itemsToUpdate.length) * 100}%`;
+        
+        const index = watchlist.findIndex(w => w.id === item.id);
+        if (index === -1) continue;
+        
+        let foundData = false;
+        
+        // Try TMDB first for better posters
+        if (tmdbApiKey && !watchlist[index].posterUrl) {
+            const tmdbResults = await searchTMDB(item.title, item.year);
+            if (tmdbResults && tmdbResults.length > 0) {
+                const match = tmdbResults[0];
+                if (match.poster_path) {
+                    watchlist[index].posterUrl = getTMDBPosterUrl(match.poster_path, 'w500');
+                    foundData = true;
+                }
+                
+                // Get more details
+                const mediaType = match.media_type === 'tv' ? 'tv' : 'movie';
+                const tmdbDetails = await getTMDBDetails(match.id, mediaType);
+                if (tmdbDetails) {
+                    if (!watchlist[index].genre && tmdbDetails.genres) {
+                        watchlist[index].genre = tmdbDetails.genres.map(g => g.name).join(', ');
+                    }
+                    if (tmdbDetails.external_ids?.imdb_id) {
+                        watchlist[index].imdbLink = `https://www.imdb.com/title/${tmdbDetails.external_ids.imdb_id}/`;
+                    }
+                }
+            }
+        }
+        
+        // Use OMDB for IMDB ratings
+        if (omdbApiKey && !watchlist[index].imdbRating) {
+            const omdbDetails = await getOMDBByTitle(item.title, item.year);
+            if (omdbDetails) {
+                if (omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {
+                    watchlist[index].imdbRating = parseFloat(omdbDetails.imdbRating);
+                    foundData = true;
+                }
+                if (!watchlist[index].imdbLink && omdbDetails.imdbID) {
+                    watchlist[index].imdbLink = `https://www.imdb.com/title/${omdbDetails.imdbID}/`;
+                }
+                if (!watchlist[index].genre && omdbDetails.Genre) {
+                    watchlist[index].genre = omdbDetails.Genre;
+                }
+                if (omdbDetails.Ratings) {
+                    const rtRating = omdbDetails.Ratings.find(r => r.Source === 'Rotten Tomatoes');
+                    if (rtRating && !watchlist[index].rtRating) {
+                        watchlist[index].rtRating = parseInt(rtRating.Value);
+                    }
+                }
+                // Use OMDB poster if we still don't have one
+                if (!watchlist[index].posterUrl && omdbDetails.Poster !== 'N/A') {
+                    watchlist[index].posterUrl = omdbDetails.Poster;
+                    foundData = true;
+                }
+            }
+        }
+        
+        if (foundData) {
+            updated++;
+        } else {
+            failed++;
+        }
+        
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    
+    saveWatchlist();
+    renderWatchlist();
+    
+    progressDiv.style.display = 'none';
+    bulkFetchBtn.disabled = false;
+    
+    let message = `Updated ${updated} items with posters/ratings`;
+    if (failed > 0) {
+        message += ` (${failed} not found)`;
     }
     showToast(message, 'success');
 }

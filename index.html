@@ -20,6 +20,12 @@
                 </h1>
                 <p class="tagline">Track your movies & series journey</p>
             </div>
+            <button class="settings-btn" id="settingsBtn" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+            </button>
         </header>
 
         <!-- Stats Bar -->
@@ -100,9 +106,19 @@
                     <input type="hidden" id="editId">
                     
                     <div class="form-row">
-                        <div class="form-group">
+                        <div class="form-group title-search-group">
                             <label for="title">Title *</label>
-                            <input type="text" id="title" required placeholder="e.g., Inception">
+                            <div class="title-input-wrapper">
+                                <input type="text" id="title" required placeholder="e.g., Inception">
+                                <button type="button" class="search-title-btn" id="searchTitleBtn" title="Auto-fetch details">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="11" cy="11" r="8"/>
+                                        <path d="m21 21-4.35-4.35"/>
+                                    </svg>
+                                    <span>Fetch</span>
+                                </button>
+                            </div>
+                            <div class="search-results" id="searchResults"></div>
                         </div>
                         <div class="form-group">
                             <label for="year">Year</label>
@@ -138,6 +154,23 @@
                             <div class="rating-input">
                                 <input type="number" id="myRating" min="0" max="10" step="0.1" placeholder="0-10">
                                 <span class="rating-max">/ 10</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="imdbRating">IMDB Rating</label>
+                            <div class="rating-input">
+                                <input type="number" id="imdbRating" min="0" max="10" step="0.1" placeholder="Auto-fetched">
+                                <span class="rating-max">/ 10</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="rtRating">Rotten Tomatoes</label>
+                            <div class="rating-input">
+                                <input type="number" id="rtRating" min="0" max="100" step="1" placeholder="Auto-fetched">
+                                <span class="rating-max">%</span>
                             </div>
                         </div>
                     </div>
@@ -269,16 +302,110 @@
                                 <input type="checkbox" id="skipDuplicates" checked>
                                 Skip duplicates (same title + year)
                             </label>
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="markAsWatched" checked>
-                                Mark all as "Watched"
-                            </label>
+                            <div class="import-status-select">
+                                <label for="importStatus">Set status to:</label>
+                                <select id="importStatus">
+                                    <option value="auto">Auto-detect from file</option>
+                                    <option value="want-to-watch">Want to Watch</option>
+                                    <option value="watching">Watching</option>
+                                    <option value="watched">Watched</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="form-actions">
                             <button type="button" class="btn-secondary" id="cancelImport">Cancel</button>
                             <button type="button" class="btn-primary" id="confirmImport">
                                 Import <span id="importCountBtn">0</span> Titles
                             </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div class="modal-overlay" id="settingsModalOverlay">
+            <div class="modal settings-modal">
+                <div class="modal-header">
+                    <h2>Settings</h2>
+                    <button class="close-btn" id="closeSettingsModal">&times;</button>
+                </div>
+                <div class="settings-content">
+                    <div class="setting-section">
+                        <h3>🎬 TMDB API Key <span class="recommended-badge">Recommended</span></h3>
+                        <p class="setting-desc">Better posters, more metadata. Used by Letterboxd!</p>
+                        <div class="api-key-input">
+                            <input type="text" id="tmdbApiKey" placeholder="Enter your TMDB API key">
+                            <button type="button" class="btn-primary" id="saveTmdbApiKey">Save</button>
+                        </div>
+                        <div class="api-key-status" id="tmdbApiKeyStatus"></div>
+                        <div class="api-instructions">
+                            <h4>How to get your free API key:</h4>
+                            <ol>
+                                <li>Go to <a href="https://www.themoviedb.org/signup" target="_blank">themoviedb.org/signup</a> and create account</li>
+                                <li>Go to <a href="https://www.themoviedb.org/settings/api" target="_blank">Settings → API</a></li>
+                                <li>Click <strong>"Create"</strong> → Select "Developer"</li>
+                                <li>Fill the form (use "Personal" for type)</li>
+                                <li>Copy your <strong>API Key (v3 auth)</strong> and paste above</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <div class="setting-section">
+                        <h3>⭐ OMDB API Key</h3>
+                        <p class="setting-desc">For IMDB ratings and Rotten Tomatoes scores.</p>
+                        <div class="api-key-input">
+                            <input type="text" id="omdbApiKey" placeholder="Enter your OMDB API key">
+                            <button type="button" class="btn-primary" id="saveApiKey">Save</button>
+                        </div>
+                        <div class="api-key-status" id="apiKeyStatus"></div>
+                        <div class="api-instructions">
+                            <h4>How to get your free API key:</h4>
+                            <ol>
+                                <li>Go to <a href="https://www.omdbapi.com/apikey.aspx" target="_blank">omdbapi.com/apikey.aspx</a></li>
+                                <li>Select <strong>"FREE! (1,000 daily limit)"</strong></li>
+                                <li>Enter your email and submit</li>
+                                <li>Check your email and click the verification link</li>
+                                <li>Copy your API key and paste it above</li>
+                            </ol>
+                        </div>
+                    </div>
+                    
+                    <div class="setting-section">
+                        <h3>📦 Data Management</h3>
+                        <div class="data-actions">
+                            <button type="button" class="btn-secondary" id="exportDataBtn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                Export Watchlist
+                            </button>
+                            <button type="button" class="btn-danger" id="clearDataBtn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                                Clear All Data
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="setting-section">
+                        <h3>🔄 Bulk Actions</h3>
+                        <p class="setting-desc">Update all items in your watchlist with missing data.</p>
+                        <button type="button" class="btn-secondary bulk-fetch-btn" id="bulkFetchBtn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c-1.657 0-3-4.03-3-9s1.343-9 3-9m0 18c1.657 0 3-4.03 3-9s-1.343-9-3-9"/>
+                            </svg>
+                            Fetch Missing Posters & Ratings
+                        </button>
+                        <div class="bulk-progress" id="bulkProgress" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill"></div>
+                            </div>
+                            <span class="progress-text" id="progressText">0 / 0</span>
                         </div>
                     </div>
                 </div>
