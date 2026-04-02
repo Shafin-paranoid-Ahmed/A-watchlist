@@ -12,6 +12,8 @@ const PORT = process.env.PORT || 3000;
 // Load environment variables
 const OMDB_API_KEY = process.env.OMDB_API_KEY || '';
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
+// One shared playlist for "watch together" (same DB row for everyone)
+const SHARED_LIST_SLUG = (process.env.SHARED_LIST_SLUG || 'watch-together').trim().toLowerCase();
 
 const supabaseSync = require('./supabase-sync');
 
@@ -97,7 +99,8 @@ app.get('/api/config', (req, res) => {
     res.json({
         hasOmdbKey: !!OMDB_API_KEY,
         hasTmdbKey: !!TMDB_API_KEY,
-        hasCloudSync: supabaseSync.isConfigured()
+        hasCloudSync: supabaseSync.isConfigured(),
+        sharedListSlug: SHARED_LIST_SLUG
     });
 });
 

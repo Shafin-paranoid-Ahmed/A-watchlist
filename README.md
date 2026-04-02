@@ -5,8 +5,9 @@ One site for **your** movies and shows: **import your backlog** (Letterboxd / IM
 | What you want | How this app does it |
 |----------------|----------------------|
 | Not re-type your backlog | **Import** CSV from Letterboxd or IMDb, optionally **Fetch** / bulk-enrich with TMDB & OMDB. |
-| Girlfriend adds her own backlog | She opens **her** link, e.g. `?p=jane`, and imports her CSV—different profile = different list. |
-| Same list on your phone and PC | Add optional **Supabase** (see Vercel env vars + `supabase-watchlists.sql`). Without it, data stays in the browser only. |
+| Girlfriend adds her own backlog | She uses **My list** with her link, e.g. `?p=jane`, and imports her CSV—different `?p=` = different personal list. |
+| A **shared playlist** for things to watch **together** | Click **Watch together** (or open `?list=shared`). One queue for both of you; **Copy together link** to share. Stored as its own row in Supabase (`watch-together` by default; override with `SHARED_LIST_SLUG`). |
+| Same data on phone and PC | **Supabase** + env vars (see Vercel section). Without it, lists stay in the browser only. |
 
 **Privacy:** Treat `?p=...` like a weak password—use a long random slug if you care who can guess the URL.
 

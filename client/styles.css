@@ -229,6 +229,50 @@ body::before {
     color: var(--text-primary);
 }
 
+.profile-bar--shared {
+    border-color: rgba(245, 197, 24, 0.35);
+    background: rgba(245, 197, 24, 0.06);
+}
+
+.list-mode-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    margin-top: var(--space-lg);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    max-width: 380px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.list-mode-tab {
+    flex: 1;
+    padding: var(--space-md) var(--space-lg);
+    background: var(--bg-secondary);
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.list-mode-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-card);
+}
+
+.list-mode-tab.active {
+    background: var(--accent-purple);
+    color: var(--text-primary);
+}
+
+.list-mode-tab + .list-mode-tab {
+    border-left: 1px solid var(--border-color);
+}
+
 /* ============================================
    STATS BAR
    ============================================ */

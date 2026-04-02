@@ -19,6 +19,10 @@
                     <span class="logo-text">WATCHLIST</span>
                 </h1>
                 <p class="tagline">Track your movies & series journey</p>
+                <div class="list-mode-tabs" id="listModeTabs" role="tablist">
+                    <button type="button" class="list-mode-tab active" data-mode="personal" id="tabPersonal" role="tab" aria-selected="true">My list</button>
+                    <button type="button" class="list-mode-tab" data-mode="shared" id="tabShared" role="tab" aria-selected="false">Watch together</button>
+                </div>
                 <div class="profile-bar" id="profileBar">
                     <span class="profile-label">List profile</span>
                     <strong class="profile-slug" id="profileSlugDisplay">you</strong>
@@ -94,10 +98,10 @@
                 <!-- Cards will be inserted here -->
             </div>
             <div class="empty-state" id="emptyState">
-                <div class="empty-icon">🎥</div>
-                <h3>Your watchlist is empty</h3>
-                <p>Start adding movies and series to track your entertainment journey!</p>
-                <button class="add-btn" onclick="openModal()">Add Your First Title</button>
+                <div class="empty-icon" id="emptyStateIcon">🎥</div>
+                <h3 id="emptyStateTitle">Your watchlist is empty</h3>
+                <p id="emptyStateText">Start adding movies and series to track your entertainment journey!</p>
+                <button class="add-btn" id="emptyStateAddBtn" onclick="openModal()">Add Your First Title</button>
             </div>
         </main>
 

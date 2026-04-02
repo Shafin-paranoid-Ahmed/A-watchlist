@@ -18,7 +18,12 @@ let hasCloudSync = false;
 
 const PROFILE_STORAGE_KEY = 'watchlist_active_profile';
 const LEGACY_STORAGE_KEY = 'watchlist_data';
+const LIST_MODE_KEY = 'watchlist_list_mode';
+const SHARED_LOCAL_KEY = 'watchlist_shared_v1';
 let syncPushTimer = null;
+/** @type {'personal' | 'shared'} */
+let listMode = 'personal';
+let sharedListSlug = 'watch-together';
 
 // DOM Elements
 const watchlistGrid = document.getElementById('watchlistGrid');
@@ -107,12 +112,105 @@ function getActiveProfileSlug() {
 }
 
 function getLocalStorageKey() {
-    return `watchlist_data_v2_${getActiveProfileSlug()}`;
+    return listMode === 'shared' ? SHARED_LOCAL_KEY : `watchlist_data_v2_${getActiveProfileSlug()}`;
+}
+
+/** Slug used for Supabase row: personal profile vs fixed shared playlist */
+function getSyncSlug() {
+    return listMode === 'shared' ? sharedListSlug : getActiveProfileSlug();
+}
+
+function initListModeFromUrl() {
+    const u = new URLSearchParams(window.location.search);
+    if (u.get('list') === 'shared') {
+        listMode = 'shared';
+        localStorage.setItem(LIST_MODE_KEY, 'shared');
+    } else if (u.get('list') === 'personal') {
+        listMode = 'personal';
+        localStorage.setItem(LIST_MODE_KEY, 'personal');
+    } else {
+        listMode = localStorage.getItem(LIST_MODE_KEY) || 'personal';
+        if (listMode !== 'personal' && listMode !== 'shared') listMode = 'personal';
+    }
+}
+
+function updateListModeTabs() {
+    document.querySelectorAll('.list-mode-tab').forEach((tab) => {
+        const active = tab.dataset.mode === listMode;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+}
+
+async function switchListMode(mode) {
+    if (mode !== 'personal' && mode !== 'shared') return;
+    if (listMode === mode) return;
+    listMode = mode;
+    localStorage.setItem(LIST_MODE_KEY, mode);
+    clearTimeout(syncPushTimer);
+    syncPushTimer = null;
+
+    const url = new URL(window.location.href);
+    if (mode === 'shared') url.searchParams.set('list', 'shared');
+    else url.searchParams.delete('list');
+    window.history.replaceState({}, '', url);
+
+    await loadWatchlist();
+    updateListModeTabs();
+    updateProfileBarForMode();
+    updateEmptyStateCopy();
+    renderWatchlist();
+    updateStats();
 }
 
 function updateProfileBar() {
     const el = document.getElementById('profileSlugDisplay');
-    if (el) el.textContent = getActiveProfileSlug();
+    if (el && listMode === 'personal') el.textContent = getActiveProfileSlug();
+}
+
+function updateProfileBarForMode() {
+    const bar = document.getElementById('profileBar');
+    const switchBtn = document.getElementById('switchProfileBtn');
+    const label = bar?.querySelector('.profile-label');
+    const slugEl = document.getElementById('profileSlugDisplay');
+    const copyBtn = document.getElementById('copyProfileLinkBtn');
+    if (!bar) return;
+
+    if (listMode === 'shared') {
+        bar.classList.add('profile-bar--shared');
+        if (label) label.textContent = 'Together';
+        if (slugEl) slugEl.textContent = 'One queue for both of you';
+        if (switchBtn) switchBtn.style.display = 'none';
+        if (copyBtn) {
+            copyBtn.textContent = 'Copy together link';
+            copyBtn.title = 'Share this link — same list for date night';
+        }
+    } else {
+        bar.classList.remove('profile-bar--shared');
+        if (label) label.textContent = 'List profile';
+        if (switchBtn) switchBtn.style.display = '';
+        if (copyBtn) {
+            copyBtn.textContent = 'Copy link';
+            copyBtn.title = 'Share this list only';
+        }
+        updateProfileBar();
+    }
+}
+
+function updateEmptyStateCopy() {
+    const title = document.getElementById('emptyStateTitle');
+    const text = document.getElementById('emptyStateText');
+    const icon = document.getElementById('emptyStateIcon');
+    if (!title) return;
+    if (listMode === 'shared') {
+        if (icon) icon.textContent = '💑';
+        title.textContent = 'Your together list is empty';
+        text.textContent = 'Add movies or shows you want to watch as a pair. You both see the same playlist (with cloud sync on).';
+    } else {
+        if (icon) icon.textContent = '🎥';
+        title.textContent = 'Your watchlist is empty';
+        text.textContent = 'Start adding movies and series to track your entertainment journey!';
+    }
 }
 
 function openProfileModal() {
@@ -132,6 +230,10 @@ function applyProfileSwitch() {
         showToast('Use 1–48 characters: letters, numbers, dashes only', 'error');
         return;
     }
+    if (s === sharedListSlug) {
+        showToast(`"${s}" is reserved for Watch together. Pick another profile id.`, 'error');
+        return;
+    }
     localStorage.setItem(PROFILE_STORAGE_KEY, s);
     const url = new URL(window.location.href);
     url.searchParams.set('p', s);
@@ -141,13 +243,20 @@ function applyProfileSwitch() {
 }
 
 function copyProfileLink() {
-    const slug = getActiveProfileSlug();
-    const share = `${window.location.origin}${window.location.pathname}?p=${encodeURIComponent(slug)}`;
+    const base = `${window.location.origin}${window.location.pathname}`;
+    const share =
+        listMode === 'shared'
+            ? `${base}?list=shared`
+            : `${base}?p=${encodeURIComponent(getActiveProfileSlug())}`;
     navigator.clipboard.writeText(share).then(
-        () => showToast('Link copied — send this for this list only', 'success'),
-        () => {
-            prompt('Copy this link:', share);
-        }
+        () =>
+            showToast(
+                listMode === 'shared'
+                    ? 'Together link copied — you both edit the same queue'
+                    : 'Link copied — this is your personal list only',
+                'success'
+            ),
+        () => prompt('Copy this link:', share)
     );
 }
 
@@ -157,10 +266,14 @@ function copyProfileLink() {
 
 document.addEventListener('DOMContentLoaded', async () => {
     initProfileFromUrl();
+    initListModeFromUrl();
     loadApiKey();
     await checkServerConfig();
     await loadWatchlist();
+    updateListModeTabs();
     updateProfileBar();
+    updateProfileBarForMode();
+    updateEmptyStateCopy();
     renderWatchlist();
     updateStats();
     setupEventListeners();
@@ -175,6 +288,9 @@ async function checkServerConfig() {
             serverHasOmdbKey = config.hasOmdbKey;
             serverHasTmdbKey = config.hasTmdbKey;
             hasCloudSync = !!config.hasCloudSync;
+            if (config.sharedListSlug) {
+                sharedListSlug = String(config.sharedListSlug).toLowerCase().trim() || 'watch-together';
+            }
             console.log('Server API config:', config);
         }
     } catch (error) {
@@ -323,6 +439,10 @@ function setupEventListeners() {
     document.getElementById('profileModalOverlay')?.addEventListener('click', (e) => {
         if (e.target.id === 'profileModalOverlay') closeProfileModal();
     });
+
+    document.querySelectorAll('.list-mode-tab').forEach((tab) => {
+        tab.addEventListener('click', () => switchListMode(tab.dataset.mode));
+    });
 }
 
 // ============================================
@@ -330,12 +450,14 @@ function setupEventListeners() {
 // ============================================
 
 async function loadWatchlist() {
-    const slug = getActiveProfileSlug();
+    const slug = getSyncSlug();
 
-    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (legacy && !localStorage.getItem('watchlist_migrated_legacy')) {
-        localStorage.setItem(getLocalStorageKey(), legacy);
-        localStorage.setItem('watchlist_migrated_legacy', '1');
+    if (listMode === 'personal') {
+        const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+        if (legacy && !localStorage.getItem('watchlist_migrated_legacy')) {
+            localStorage.setItem(getLocalStorageKey(), legacy);
+            localStorage.setItem('watchlist_migrated_legacy', '1');
+        }
     }
 
     if (hasCloudSync) {
@@ -371,7 +493,7 @@ function scheduleCloudPush() {
 
 async function pushWatchlistToCloud() {
     if (!hasCloudSync) return;
-    const slug = getActiveProfileSlug();
+    const slug = getSyncSlug();
     try {
         const r = await fetch(`/api/sync/${encodeURIComponent(slug)}`, {
             method: 'PUT',
@@ -1135,14 +1257,18 @@ function exportData() {
 }
 
 function clearAllData() {
-    if (confirm('Are you sure you want to delete ALL your watchlist data? This cannot be undone!')) {
-        if (confirm('Really delete everything? Type OK to confirm.')) {
+    const which =
+        listMode === 'shared'
+            ? 'the shared “Watch together” list for EVERYONE'
+            : 'your personal watchlist';
+    if (confirm(`Delete ALL titles in ${which}? This cannot be undone.`)) {
+        if (confirm('Really delete everything?')) {
             watchlist = [];
             saveWatchlist();
             renderWatchlist();
             updateStats();
             closeSettingsModal();
-            showToast('All data cleared', 'success');
+            showToast('List cleared', 'success');
         }
     }
 }
