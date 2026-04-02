@@ -82,6 +82,11 @@ let omdbApiKey = '';
 let tmdbApiKey = '';
 let detectedImportStatus = 'watched';
 
+const SEARCH_DEBOUNCE_MS = 220;
+let searchDebounceTimer = null;
+
+const ENRICH_BATCH_SIZE = 120;
+
 // ============================================
 // PROFILES (you vs partner — separate lists, same site)
 // ============================================
@@ -319,10 +324,19 @@ function setupEventListeners() {
     // Form submission
     watchlistForm.addEventListener('submit', handleFormSubmit);
     
-    // Search
+    // Search (debounced — avoids repainting the grid on every keystroke)
     searchInput.addEventListener('input', (e) => {
-        searchQuery = e.target.value.toLowerCase();
-        renderWatchlist();
+        const value = e.target.value.toLowerCase();
+        const apply = () => {
+            searchQuery = value;
+            renderWatchlist();
+        };
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        if (value === '') {
+            apply();
+            return;
+        }
+        searchDebounceTimer = setTimeout(apply, SEARCH_DEBOUNCE_MS);
     });
     
     // Filter buttons
@@ -1830,21 +1844,90 @@ async function bulkFetchDetails(options = {}) {
 
     if (progressDiv) progressDiv.style.display = 'flex';
     if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = true;
-    
+
     let updated = 0;
     let failed = 0;
-    
-    for (let i = 0; i < itemsToUpdate.length; i++) {
-        const item = itemsToUpdate[i];
-        if (progressText) progressText.textContent = `${i + 1} / ${itemsToUpdate.length}`;
-        if (progressFill) progressFill.style.width = `${((i + 1) / itemsToUpdate.length) * 100}%`;
-        
+
+    const tryServerBatch = serverHasTmdbKey || serverHasOmdbKey;
+    let batchCompletedOk = false;
+
+    if (tryServerBatch) {
+        batchCompletedOk = true;
+        for (let off = 0; off < itemsToUpdate.length; off += ENRICH_BATCH_SIZE) {
+            const chunk = itemsToUpdate.slice(off, off + ENRICH_BATCH_SIZE);
+            try {
+                const r = await fetch('/api/enrich-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: chunk })
+                });
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                const j = await r.json();
+                for (const p of j.patches || []) {
+                    const idx = watchlist.findIndex(w => w.id === p.id);
+                    if (idx === -1) continue;
+                    const w = watchlist[idx];
+                    if (p.posterUrl) w.posterUrl = p.posterUrl;
+                    if (p.imdbRating != null && p.imdbRating !== '') w.imdbRating = p.imdbRating;
+                    if (p.imdbLink) w.imdbLink = p.imdbLink;
+                    if (p.genre) w.genre = p.genre;
+                    if (p.rtRating != null && p.rtRating !== '') w.rtRating = p.rtRating;
+                }
+                updated += j.updated || 0;
+                failed += j.failed || 0;
+            } catch (err) {
+                console.warn('enrich-batch failed', err);
+                batchCompletedOk = false;
+                break;
+            }
+            const done = Math.min(off + chunk.length, itemsToUpdate.length);
+            if (progressText) progressText.textContent = `${done} / ${itemsToUpdate.length}`;
+            if (progressFill) progressFill.style.width = `${(done / itemsToUpdate.length) * 100}%`;
+        }
+    }
+
+    if (tryServerBatch && batchCompletedOk) {
+        saveWatchlist();
+        renderWatchlist();
+        if (progressDiv) progressDiv.style.display = 'none';
+        if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;
+        let message = `Updated ${updated} items with posters/ratings`;
+        if (failed > 0) message += ` (${failed} not found)`;
+        showToast(message, 'success');
+        return;
+    }
+
+    let toProcess = itemsToUpdate;
+    if (tryServerBatch && !batchCompletedOk) {
+        toProcess = watchlist.filter(item =>
+            (!item.posterUrl || !item.imdbRating) &&
+            (!onlyIds || onlyIds.has(item.id))
+        );
+        if (toProcess.length && !tmdbApiKey && !omdbApiKey) {
+            saveWatchlist();
+            renderWatchlist();
+            if (progressDiv) progressDiv.style.display = 'none';
+            if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;
+            showToast('Server enrich failed and no browser API keys to fall back on.', 'error');
+            return;
+        }
+        if (toProcess.length) {
+            showToast('Finishing with browser API keys…', 'success');
+        }
+        updated = 0;
+        failed = 0;
+    }
+
+    for (let i = 0; i < toProcess.length; i++) {
+        const item = toProcess[i];
+        if (progressText) progressText.textContent = `${i + 1} / ${toProcess.length}`;
+        if (progressFill) progressFill.style.width = `${((i + 1) / toProcess.length) * 100}%`;
+
         const index = watchlist.findIndex(w => w.id === item.id);
         if (index === -1) continue;
-        
+
         let foundData = false;
-        
-        // Try TMDB first for better posters
+
         if ((serverHasTmdbKey || tmdbApiKey) && !watchlist[index].posterUrl) {
             const tmdbResults = await searchTMDB(item.title, item.year);
             if (tmdbResults && tmdbResults.length > 0) {
@@ -1853,8 +1936,6 @@ async function bulkFetchDetails(options = {}) {
                     watchlist[index].posterUrl = getTMDBPosterUrl(match.poster_path, 'w500');
                     foundData = true;
                 }
-                
-                // Get more details
                 const mediaType = match.media_type === 'tv' ? 'tv' : 'movie';
                 const tmdbDetails = await getTMDBDetails(match.id, mediaType);
                 if (tmdbDetails) {
@@ -1867,8 +1948,7 @@ async function bulkFetchDetails(options = {}) {
                 }
             }
         }
-        
-        // Use OMDB for IMDB ratings
+
         if ((serverHasOmdbKey || omdbApiKey) && !watchlist[index].imdbRating) {
             const omdbDetails = await getOMDBByTitle(item.title, item.year);
             if (omdbDetails) {
@@ -1888,21 +1968,19 @@ async function bulkFetchDetails(options = {}) {
                         watchlist[index].rtRating = parseInt(rtRating.Value);
                     }
                 }
-                // Use OMDB poster if we still don't have one
                 if (!watchlist[index].posterUrl && omdbDetails.Poster !== 'N/A') {
                     watchlist[index].posterUrl = omdbDetails.Poster;
                     foundData = true;
                 }
             }
         }
-        
+
         if (foundData) {
             updated++;
         } else {
             failed++;
         }
-        
-        // Small delay to avoid rate limiting
+
         await new Promise(resolve => setTimeout(resolve, 250));
     }
     

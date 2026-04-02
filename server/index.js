@@ -16,6 +16,9 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
 const SHARED_LIST_SLUG = (process.env.SHARED_LIST_SLUG || 'watch-together').trim().toLowerCase();
 
 const supabaseSync = require('./supabase-sync');
+const { enrichBatch } = require('./enrich-batch');
+
+const ENRICH_BATCH_MAX = 120;
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -91,6 +94,41 @@ app.get('/api/tmdb/:mediaType/:id', async (req, res) => {
     } catch (error) {
         console.error('TMDB details error:', error);
         res.status(500).json({ error: 'Failed to fetch from TMDB' });
+    }
+});
+
+// Batch enrich (posters + ratings) — parallel upstream calls, used after CSV import / bulk fetch
+app.post('/api/enrich-batch', async (req, res) => {
+    if (!OMDB_API_KEY && !TMDB_API_KEY) {
+        return res.status(503).json({ error: 'TMDB/OMDB not configured on server' });
+    }
+    const items = req.body?.items;
+    if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'Body must be { items: [...] }' });
+    }
+    if (items.length > ENRICH_BATCH_MAX) {
+        return res.status(400).json({ error: `At most ${ENRICH_BATCH_MAX} items per request` });
+    }
+    const sanitized = items.map((row) => ({
+        id: row.id,
+        title: row.title,
+        year: row.year != null ? row.year : null,
+        posterUrl: row.posterUrl || '',
+        imdbRating: row.imdbRating,
+        genre: row.genre || '',
+        imdbLink: row.imdbLink || '',
+        rtRating: row.rtRating
+    }));
+    try {
+        const { results, updated, failed } = await enrichBatch(sanitized, {
+            tmdbKey: TMDB_API_KEY,
+            omdbKey: OMDB_API_KEY,
+            concurrency: 6
+        });
+        res.json({ patches: results, updated, failed });
+    } catch (e) {
+        console.error('enrich-batch:', e);
+        res.status(500).json({ error: 'Batch enrich failed' });
     }
 });
 
