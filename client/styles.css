@@ -1271,6 +1271,33 @@ form {
     overflow-y: auto;
 }
 
+.server-keys-banner {
+    background: rgba(70, 211, 105, 0.12);
+    border: 1px solid var(--status-watched);
+    border-radius: var(--radius-md);
+    padding: var(--space-md) var(--space-lg);
+    margin-bottom: var(--space-lg);
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.server-keys-banner p {
+    margin: 0 0 var(--space-sm) 0;
+}
+
+.server-keys-banner p:last-child {
+    margin-bottom: 0;
+}
+
+.server-keys-banner strong {
+    color: var(--text-primary);
+}
+
+.server-keys-banner-note {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
 .setting-section {
     margin-bottom: var(--space-xl);
     padding-bottom: var(--space-xl);

@@ -331,9 +331,13 @@
                     <button class="close-btn" id="closeSettingsModal">&times;</button>
                 </div>
                 <div class="settings-content">
+                    <div class="server-keys-banner" id="serverKeysBanner" style="display: none;">
+                        <p><strong>API keys are already set on this server</strong> (for example Vercel environment variables). Fetch and search work without pasting anything below.</p>
+                        <p class="server-keys-banner-note">Optional: add keys here to override in <em>this browser only</em> (saved in localStorage).</p>
+                    </div>
                     <div class="setting-section">
                         <h3>🎬 TMDB API Key <span class="recommended-badge">Recommended</span></h3>
-                        <p class="setting-desc">Better posters, more metadata. Used by Letterboxd!</p>
+                        <p class="setting-desc">Better posters, more metadata. Optional on deployed sites — only needed if you use this app <strong>without</strong> a server proxy, or to override the server keys in this browser.</p>
                         <div class="api-key-input">
                             <input type="text" id="tmdbApiKey" placeholder="Enter your TMDB API key">
                             <button type="button" class="btn-primary" id="saveTmdbApiKey">Save</button>
@@ -353,7 +357,7 @@
 
                     <div class="setting-section">
                         <h3>⭐ OMDB API Key</h3>
-                        <p class="setting-desc">For IMDB ratings and Rotten Tomatoes scores.</p>
+                        <p class="setting-desc">For IMDB ratings and Rotten Tomatoes scores. Optional on deployed sites if env vars are already set on the host.</p>
                         <div class="api-key-input">
                             <input type="text" id="omdbApiKey" placeholder="Enter your OMDB API key">
                             <button type="button" class="btn-primary" id="saveApiKey">Save</button>

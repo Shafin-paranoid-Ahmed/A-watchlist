@@ -940,8 +940,10 @@ function loadApiKey() {
     }
 }
 
-function openSettingsModal() {
+async function openSettingsModal() {
     settingsModalOverlay.classList.add('active');
+    await checkServerConfig();
+    loadApiKey();
     omdbApiKeyInput.value = omdbApiKey;
     document.getElementById('tmdbApiKey').value = tmdbApiKey;
     updateApiKeyStatus();
@@ -952,22 +954,33 @@ function closeSettingsModal() {
 }
 
 function updateApiKeyStatus() {
-    // OMDB status
-    if (omdbApiKey) {
-        apiKeyStatus.textContent = '✓ API key is set';
+    const banner = document.getElementById('serverKeysBanner');
+    const serverProvides = serverHasOmdbKey || serverHasTmdbKey;
+    if (banner) {
+        banner.style.display = serverProvides ? 'block' : 'none';
+    }
+
+    // OMDB: prefer server message when env is configured (no local key needed)
+    if (serverHasOmdbKey && !omdbApiKey) {
+        apiKeyStatus.textContent = '✓ Provided by server — nothing to paste here';
+        apiKeyStatus.className = 'api-key-status success';
+    } else if (omdbApiKey) {
+        apiKeyStatus.textContent = '✓ Browser key saved (overrides server for this device)';
         apiKeyStatus.className = 'api-key-status success';
     } else {
-        apiKeyStatus.textContent = '⚠ No API key set';
+        apiKeyStatus.textContent = '⚠ No key — add below, or deploy with OMDB_API_KEY on the server';
         apiKeyStatus.className = 'api-key-status error';
     }
-    
-    // TMDB status
+
     const tmdbStatus = document.getElementById('tmdbApiKeyStatus');
-    if (tmdbApiKey) {
-        tmdbStatus.textContent = '✓ API key is set';
+    if (serverHasTmdbKey && !tmdbApiKey) {
+        tmdbStatus.textContent = '✓ Provided by server — nothing to paste here';
+        tmdbStatus.className = 'api-key-status success';
+    } else if (tmdbApiKey) {
+        tmdbStatus.textContent = '✓ Browser key saved (overrides server for this device)';
         tmdbStatus.className = 'api-key-status success';
     } else {
-        tmdbStatus.textContent = '⚠ No API key set';
+        tmdbStatus.textContent = '⚠ No key — add below, or deploy with TMDB_API_KEY on the server';
         tmdbStatus.className = 'api-key-status error';
     }
 }
