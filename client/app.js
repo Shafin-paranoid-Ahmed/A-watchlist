@@ -3060,8 +3060,9 @@ async function selectSearchResult(id, source, mediaType) {
             
             director = directorsFromTmdbCrew(tmdbDetails);
             
+            const canOmdb = serverHasOmdbKey || omdbApiKey;
             // Now fetch OMDB for IMDB rating and RT score
-            if (imdbId && omdbApiKey) {
+            if (imdbId && canOmdb) {
                 const omdbDetails = await getOMDBDetails(imdbId);
                 if (omdbDetails) {
                     if (omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {
@@ -3071,8 +3072,15 @@ async function selectSearchResult(id, source, mediaType) {
                         const rt = omdbDetails.Ratings.find(r => r.Source === 'Rotten Tomatoes');
                         if (rt) rtRating = parseInt(rt.Value);
                     }
+                    if (
+                        !String(director || '').trim() &&
+                        omdbDetails.Director &&
+                        omdbDetails.Director !== 'N/A'
+                    ) {
+                        director = String(omdbDetails.Director).trim();
+                    }
                 }
-            } else if (omdbApiKey) {
+            } else if (canOmdb) {
                 // Try to get OMDB by title if no IMDB ID
                 const omdbDetails = await getOMDBByTitle(title, year);
                 if (omdbDetails) {
@@ -3083,6 +3091,13 @@ async function selectSearchResult(id, source, mediaType) {
                     if (omdbDetails.Ratings) {
                         const rt = omdbDetails.Ratings.find(r => r.Source === 'Rotten Tomatoes');
                         if (rt) rtRating = parseInt(rt.Value);
+                    }
+                    if (
+                        !String(director || '').trim() &&
+                        omdbDetails.Director &&
+                        omdbDetails.Director !== 'N/A'
+                    ) {
+                        director = String(omdbDetails.Director).trim();
                     }
                 }
             }
@@ -3136,6 +3151,7 @@ async function selectSearchResult(id, source, mediaType) {
     document.getElementById('year').value = year;
     document.getElementById('type').value = type;
     document.getElementById('genre').value = genre;
+;
     const directorField = document.getElementById('director');
     if (directorField) {
         directorField.value =
