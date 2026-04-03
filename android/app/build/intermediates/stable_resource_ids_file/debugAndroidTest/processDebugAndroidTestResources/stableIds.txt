@@ -1,0 +1,2 @@
+com.paranoidandroid.watchlist.test:style/WhiteBackgroundTheme = 0x7f010001
+com.paranoidandroid.watchlist.test:style/WhiteBackgroundDialogTheme = 0x7f010000

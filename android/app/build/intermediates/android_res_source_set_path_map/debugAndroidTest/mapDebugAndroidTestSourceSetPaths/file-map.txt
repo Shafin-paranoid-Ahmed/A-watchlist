@@ -1,0 +1,5 @@
+com.paranoidandroid.watchlist.test.app-androidTest-0 F:\BRACU THINGS\10th Semester\CSE420\A-watchlist\android\app\build\generated\res\resValues\androidTest\debug
+com.paranoidandroid.watchlist.test.app-updated_navigation_xml-1 F:\BRACU THINGS\10th Semester\CSE420\A-watchlist\android\app\build\generated\updated_navigation_xml\debugAndroidTest
+com.paranoidandroid.watchlist.test.app-mergeDebugAndroidTestResources-2 F:\BRACU THINGS\10th Semester\CSE420\A-watchlist\android\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
+com.paranoidandroid.watchlist.test.app-mergeDebugAndroidTestResources-3 F:\BRACU THINGS\10th Semester\CSE420\A-watchlist\android\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
+com.paranoidandroid.watchlist.test.app-debugAndroidTest-4 F:\BRACU THINGS\10th Semester\CSE420\A-watchlist\android\app\build\intermediates\merged_res\debugAndroidTest\mergeDebugAndroidTestResources

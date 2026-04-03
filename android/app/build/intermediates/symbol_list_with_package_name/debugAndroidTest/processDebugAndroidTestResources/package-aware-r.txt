@@ -1,0 +1,3 @@
+com.paranoidandroid.watchlist.test
+style WhiteBackgroundDialogTheme
+style WhiteBackgroundTheme
