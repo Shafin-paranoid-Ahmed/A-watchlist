@@ -279,9 +279,10 @@ app.put('/api/sync/:slug', async (req, res) => {
     }
 });
 
-// UI: dev uses ./client; production on Vercel uses ./public (filled by `npm run vercel-build`).
+// UI: dev uses ./client; production on Vercel uses ./web (filled by build — NOT ./public, because Vercel
+// serves root public/ via CDN and bypasses Express, which breaks private-site gate middleware).
 const staticRoot = process.env.VERCEL
-    ? path.join(__dirname, '..', 'public')
+    ? path.join(__dirname, '..', 'web')
     : path.join(__dirname, '..', 'client');
 
 app.use(express.static(staticRoot));
@@ -299,7 +300,7 @@ if (require.main === module) {
         console.log('   WATCHLIST SERVER');
         console.log('═══════════════════════════════════════════');
         console.log(`   🌐 Running on: http://localhost:${PORT}`);
-        console.log(`   📁 Serving:    ${process.env.VERCEL ? './public' : './client'}`);
+        console.log(`   📁 Serving:    ${process.env.VERCEL ? './web' : './client'}`);
         console.log('───────────────────────────────────────────');
         console.log(`   🎬 OMDB API:   ${OMDB_API_KEY ? '✓ configured' : '✗ not set'}`);
         console.log(`   🎞️  TMDB API:   ${TMDB_API_KEY ? '✓ configured' : '✗ not set'}`);

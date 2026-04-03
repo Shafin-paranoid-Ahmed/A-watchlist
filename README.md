@@ -22,7 +22,7 @@ The URL does **not** contain your movies. It only selects which list name to ope
 ```
 A-watchlist/
 ├── client/
-├── public/                  # build output — gitignored
+├── web/                     # Vercel build output (client copy) — gitignored; NOT named public/ (see README Vercel section)
 ├── server/
 ├── scripts/
 ├── supabase-watchlists.sql  # run once in Supabase for cloud sync
@@ -80,7 +80,7 @@ What happens:
 
 - **`npm start`** runs `server/index.js`, which loads `.env` from **`server/.env`** and the **project root** `.env` (see `server/index.js`).
 - Static files are served from **`client/`** when **`VERCEL`** is not set.
-- **`npm run build`** copies `client/` → **`public/`** (used for **Vercel** deploys). You do **not** have to run `build` for normal local full-stack dev.
+- **`npm run build`** copies `client/` → **`web/`** (used for **Vercel** deploys). You do **not** have to run `build` for normal local full-stack dev. We use `web/` instead of `public/` so Vercel does not serve the UI from the CDN and bypass Express (needed for private-site password gate).
 
 ### Client only (no backend)
 
@@ -103,7 +103,7 @@ npm run build
 npx vercel dev
 ```
 
-This uses the same `public/` + Express layout as production.
+This uses the same `web/` + Express layout as production.
 
 ---
 
@@ -112,7 +112,7 @@ This uses the same `public/` + Express layout as production.
 | | Local full stack | Vercel |
 |--|------------------|--------|
 | Start | `npm start` | Deploy with build `npm run build` |
-| Static UI | Served from `client/` | Served from `public/` (copy step in build) |
+| Static UI | Served from `client/` | Served from `web/` via Express (copy step in build) |
 | Env vars | `.env` / `server/.env` | Project → Settings → Environment Variables |
 
 ---
@@ -241,7 +241,7 @@ git push origin main
 
 ### Deploy to Vercel
 
-Vercel treats this repo as an **Express** app. Static files must live in `public/` at deploy time, so we run `vercel-build` to copy `client/` → `public/`. Your API keys only go in the Vercel dashboard (never in git).
+Vercel treats this repo as an **Express** app. Run `vercel-build` to copy `client/` → **`web/`** (not `public/`, so the UI is not CDN-served without Express). Your API keys only go in the Vercel dashboard (never in git).
 
 **Step 1: Push the repo to GitHub** (same as CodeSandbox — no `.env` committed)
 
@@ -273,13 +273,13 @@ Apply these vars to **Production** (and **Preview** if you use preview URLs).
 
 - **Install Command:** `npm install` (default)
 - **Build Command:** `npm run build` (default when Vercel sees a `build` script in `package.json`).  
-  This copies `client/` → `public/` so Vercel’s CDN can serve your HTML/CSS/JS ([Express on Vercel](https://vercel.com/docs/frameworks/backend/express) ignores `express.static()`).
+  This copies `client/` → **`web/`**. Express serves `web/` in production so routes like private-site gate run on every page load. (A root **`public/`** folder would be served by the CDN and would **bypass** Express.)
 
-Do **not** set a custom **Output Directory** to `client` for this full-stack setup — the Express app plus `public/` is the correct layout.
+Do **not** set a custom **Output Directory** to `client` for this full-stack setup — the Express app serves built files from `web/`.
 
 **Step 5: Deploy**
 
-Click **Deploy**. Open the production URL: the HTML/CSS/JS load from `public/`, and `/api/*` hits your Express routes with server-side secrets.
+Click **Deploy**. Open the production URL: HTML/CSS/JS are served by Express from `web/`, and `/api/*` hits the same app with server-side secrets.
 
 **Local check (optional)**  
 `npm install` then `npx vercel dev` (requires [Vercel CLI](https://vercel.com/docs/cli)).
@@ -290,10 +290,10 @@ Click **Deploy**. Open the production URL: the HTML/CSS/JS load from `public/`, 
 
 Use **Docker** or a **Node web service**:
 
-- **Build:** `npm install && npm run vercel-build` (optional `public/` copy if you serve static from disk), or `npm install` only if the platform serves `client/` another way
+- **Build:** `npm install && npm run vercel-build` (optional `web/` copy if you serve static from disk), or `npm install` only if the platform serves `client/` another way
 - **Start:** `npm start` (runs `node server/index.js`)
 
-Set the same env vars: `OMDB_API_KEY`, `TMDB_API_KEY`. On Render/Railway, `express.static` for `./client` still runs, so you may **skip** `vercel-build` unless you rely on a `public/` folder.
+Set the same env vars: `OMDB_API_KEY`, `TMDB_API_KEY`. On Render/Railway, `express.static` for `./client` still runs, so you may **skip** `vercel-build` unless you rely on a copied `web/` folder for production parity.
 
 ---
 

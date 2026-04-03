@@ -18,7 +18,7 @@ Core files:
 Run scripts (`package.json`):
 - `npm start` / `npm run dev` -> runs `server/index.js`
 - `npm run client` -> static client only
-- `npm run build` / `npm run vercel-build` -> copies `client/` to `public/`
+- `npm run build` / `npm run vercel-build` -> copies `client/` to `web/` (avoids Vercel CDN serving root `public/` and bypassing Express)
 
 ---
 

@@ -7,8 +7,8 @@
     "start": "node server/index.js",
     "dev": "node server/index.js",
     "client": "npx serve client",
-    "build": "node scripts/copy-client-to-public.js",
-    "vercel-build": "node scripts/copy-client-to-public.js"
+    "build": "node scripts/copy-client-to-web.js",
+    "vercel-build": "node scripts/copy-client-to-web.js"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

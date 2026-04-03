@@ -1,5 +1,11 @@
 # Private site mode (password gate)
 
+## Vercel note (why it might have looked “broken” before)
+
+Vercel serves a root-level **`public/`** folder from the **CDN before your Express app**. If the UI lived in `public/`, requests for `/`, `app.js`, and `styles.css` **never hit Express**, so private-site middleware could not run.
+
+This project now copies the client build to **`web/`** instead. Express serves `web/` when `VERCEL` is set, so the gate applies to the real HTML/JS/CSS. **Redeploy after pulling this change.**
+
 ## What it does
 
 If you set `PRIVATE_SITE_PASSWORD` on the server (e.g. Vercel environment variables):

@@ -1,13 +1,16 @@
 /**
- * Copies client/ → public/ so Vercel can serve static assets from public/
- * (express.static is ignored on Vercel — see Vercel Express docs)
+ * Copies client/ → web/ for production builds.
+ *
+ * Vercel automatically serves files from a root-level `public/` folder via the CDN,
+ * which bypasses Express — so private-site middleware never runs for HTML/JS/CSS.
+ * Output to `web/` instead; Express serves it when VERCEL=1 so all requests hit the gate.
  */
 const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
 const src = path.join(root, 'client');
-const dest = path.join(root, 'public');
+const dest = path.join(root, 'web');
 
 function rmDir(dir) {
     if (!fs.existsSync(dir)) return;
@@ -30,10 +33,10 @@ function copyDir(from, to) {
 }
 
 if (!fs.existsSync(src)) {
-    console.error('copy-client-to-public: missing client/ folder');
+    console.error('copy-client-to-web: missing client/ folder');
     process.exit(1);
 }
 
 if (fs.existsSync(dest)) rmDir(dest);
 copyDir(src, dest);
-console.log('copy-client-to-public: client/ → public/');
+console.log('copy-client-to-web: client/ → web/');
