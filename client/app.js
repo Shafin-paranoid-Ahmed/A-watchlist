@@ -1488,12 +1488,14 @@ function mergeEmptyFormFieldsFromPrev(merged, prev, formData) {
 function handleFormSubmit(e) {
     e.preventDefault();
     
+    const directorRaw = (document.getElementById('director')?.value || '').trim();
     const formData = {
         title: document.getElementById('title').value.trim(),
         year: parseInt(document.getElementById('year').value) || null,
         type: document.getElementById('type').value,
         status: document.getElementById('status').value,
         genre: document.getElementById('genre').value.trim(),
+        director: directorRaw && directorRaw !== 'N/A' ? directorRaw : '',
         myRating: parseFloat(document.getElementById('myRating').value) || null,
         imdbRating: parseFloat(document.getElementById('imdbRating').value) || null,
         rtRating: parseInt(document.getElementById('rtRating').value) || null,
