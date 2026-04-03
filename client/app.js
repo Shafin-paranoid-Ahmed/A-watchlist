@@ -15,6 +15,8 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/';
 let serverHasOmdbKey = false;
 let serverHasTmdbKey = false;
 let hasCloudSync = false;
+/** True when server env PRIVATE_SITE_PASSWORD is set (password gate + cookie session). */
+let privateSiteEnabled = false;
 
 const PROFILE_STORAGE_KEY = 'watchlist_active_profile';
 const LEGACY_STORAGE_KEY = 'watchlist_data';
@@ -342,6 +344,7 @@ async function checkServerConfig() {
             serverHasOmdbKey = config.hasOmdbKey;
             serverHasTmdbKey = config.hasTmdbKey;
             hasCloudSync = !!config.hasCloudSync;
+            privateSiteEnabled = !!config.privateSite;
             if (config.sharedListSlug) {
                 sharedListSlug = String(config.sharedListSlug).toLowerCase().trim() || 'watch-together';
             }
@@ -506,6 +509,16 @@ function setupEventListeners() {
     closeSettingsModalBtn.addEventListener('click', closeSettingsModal);
     settingsModalOverlay.addEventListener('click', (e) => {
         if (e.target === settingsModalOverlay) closeSettingsModal();
+    });
+
+    document.getElementById('siteSignOutBtn')?.addEventListener('click', async () => {
+        try {
+            await fetch('/api/site-auth/logout', { method: 'POST', credentials: 'same-origin' });
+        } catch {
+            /* ignore */
+        }
+        closeSettingsModal();
+        window.location.href = '/gate.html';
     });
     
     // API keys
@@ -2138,6 +2151,8 @@ async function openSettingsModal() {
     omdbApiKeyInput.value = omdbApiKey;
     document.getElementById('tmdbApiKey').value = tmdbApiKey;
     updateApiKeyStatus();
+    const ps = document.getElementById('privateSiteSignOutSection');
+    if (ps) ps.style.display = privateSiteEnabled ? 'block' : 'none';
 }
 
 function closeSettingsModal() {

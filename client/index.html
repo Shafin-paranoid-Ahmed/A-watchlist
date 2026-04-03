@@ -445,6 +445,11 @@
                         <p><strong>API keys are already set on this server</strong> (for example Vercel environment variables). Fetch and search work without pasting anything below.</p>
                         <p class="server-keys-banner-note">Optional: add keys here to override in <em>this browser only</em> (saved in localStorage).</p>
                     </div>
+                    <div class="setting-section" id="privateSiteSignOutSection" style="display: none;">
+                        <h3>🔒 Site access</h3>
+                        <p class="setting-desc">This deployment is password-protected. Sign out on this device to require the password again.</p>
+                        <button type="button" class="btn-secondary" id="siteSignOutBtn">Sign out of site</button>
+                    </div>
                     <div class="setting-section">
                         <h3>🎬 TMDB API Key <span class="recommended-badge">Recommended</span></h3>
                         <p class="setting-desc">Better posters, more metadata. Optional on deployed sites — only needed if you use this app <strong>without</strong> a server proxy, or to override the server keys in this browser.</p>

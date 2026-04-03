@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in | Watchlist</title>
+    <meta name="robots" content="noindex, nofollow">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            background: #0f0f14;
+            color: #e8e8ef;
+        }
+        .card {
+            width: 100%;
+            max-width: 380px;
+            padding: 2rem;
+            background: #1a1a25;
+            border: 1px solid #2a2a3a;
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0,0,0,.45);
+        }
+        h1 {
+            margin: 0 0 0.35rem;
+            font-size: 1.35rem;
+            font-weight: 600;
+        }
+        p { margin: 0 0 1.25rem; color: #a0a0b0; font-size: 0.9rem; line-height: 1.45; }
+        label { display: block; font-size: 0.8rem; color: #a0a0b0; margin-bottom: 0.35rem; }
+        input[type="password"] {
+            width: 100%;
+            padding: 0.65rem 0.75rem;
+            border-radius: 8px;
+            border: 1px solid #2a2a3a;
+            background: #12121a;
+            color: #e8e8ef;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+        input:focus { outline: none; border-color: #0080ff; }
+        button {
+            width: 100%;
+            padding: 0.7rem 1rem;
+            border: none;
+            border-radius: 8px;
+            background: #0080ff;
+            color: #fff;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button:hover:not(:disabled) { background: #0066cc; }
+        .err {
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+            color: #ff6b6b;
+            display: none;
+        }
+        .err.show { display: block; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Private watchlist</h1>
+        <p>Enter the site password you were given. This device will stay signed in for a while.</p>
+        <form id="f" autocomplete="on">
+            <label for="pw">Password</label>
+            <input type="password" id="pw" name="password" required autocomplete="current-password" autofocus>
+            <button type="submit" id="btn">Continue</button>
+            <div class="err" id="err"></div>
+        </form>
+    </div>
+    <script>
+        (function () {
+            const form = document.getElementById('f');
+            const pw = document.getElementById('pw');
+            const btn = document.getElementById('btn');
+            const err = document.getElementById('err');
+
+            fetch('/api/site-auth/status', { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data && data.ok) {
+                        window.location.replace('/');
+                    }
+                })
+                .catch(function () {});
+
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                err.classList.remove('show');
+                err.textContent = '';
+                btn.disabled = true;
+                fetch('/api/site-auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ password: pw.value })
+                })
+                    .then(function (r) {
+                        return r.json().then(function (j) {
+                            if (!r.ok) throw new Error(j.error || 'Sign-in failed');
+                            return j;
+                        });
+                    })
+                    .then(function () {
+                        window.location.replace('/');
+                    })
+                    .catch(function (ex) {
+                        err.textContent = ex.message || 'Sign-in failed';
+                        err.classList.add('show');
+                        btn.disabled = false;
+                    });
+            });
+        })();
+    </script>
+</body>
+</html>

@@ -45,6 +45,7 @@ A-watchlist/
 - **Search & filters** — Debounced search; filter by type and watch status
 - **Title lookup** — TMDB + OMDB search when adding or editing a title
 - **Responsive UI**
+- **Optional private deployment** — Set `PRIVATE_SITE_PASSWORD` so only people with the shared password can load the app or call `/api/*` (see [docs/SECURITY_PRIVATE_SITE.md](docs/SECURITY_PRIVATE_SITE.md))
 
 ## Running locally
 

@@ -17,11 +17,18 @@ const SHARED_LIST_SLUG = (process.env.SHARED_LIST_SLUG || 'watch-together').trim
 
 const supabaseSync = require('./supabase-sync');
 const { enrichBatch } = require('./enrich-batch');
+const privateSite = require('./private-site');
 
 const ENRICH_BATCH_MAX = 120;
 
+/** When set, visitors must sign in via /gate.html; /api/* (except site-auth + config) requires session cookie. */
+const PRIVATE_SITE_PASSWORD = (process.env.PRIVATE_SITE_PASSWORD || '').trim();
+
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+
+privateSite.registerSiteAuthRoutes(app, { password: PRIVATE_SITE_PASSWORD });
+app.use(privateSite.createPrivateSiteGateMiddleware({ password: PRIVATE_SITE_PASSWORD }));
 
 // ============================================
 // API PROXY ENDPOINTS
@@ -228,7 +235,8 @@ app.get('/api/config', (req, res) => {
         hasOmdbKey: !!OMDB_API_KEY,
         hasTmdbKey: !!TMDB_API_KEY,
         hasCloudSync: supabaseSync.isConfigured(),
-        sharedListSlug: SHARED_LIST_SLUG
+        sharedListSlug: SHARED_LIST_SLUG,
+        privateSite: !!PRIVATE_SITE_PASSWORD
     });
 });
 
@@ -295,6 +303,9 @@ if (require.main === module) {
         console.log('───────────────────────────────────────────');
         console.log(`   🎬 OMDB API:   ${OMDB_API_KEY ? '✓ configured' : '✗ not set'}`);
         console.log(`   🎞️  TMDB API:   ${TMDB_API_KEY ? '✓ configured' : '✗ not set'}`);
+        console.log(
+            `   🔒 Private site: ${PRIVATE_SITE_PASSWORD ? '✓ enabled (use /gate.html)' : '✗ off'}`
+        );
         console.log('═══════════════════════════════════════════');
         console.log('');
     });
