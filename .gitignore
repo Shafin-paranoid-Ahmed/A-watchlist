@@ -24,3 +24,6 @@ npm-debug.log*
 
 # Generated for Vercel (client copied here at build; do not commit)
 public/
+watchlist-you-2026-04-03.csv
+*.json
+*.csv
