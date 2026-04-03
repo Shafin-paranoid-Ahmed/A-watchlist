@@ -124,6 +124,43 @@ app.get('/api/tmdb/search/tv', async (req, res) => {
     }
 });
 
+// TMDB person search proxy
+app.get('/api/tmdb/search/person', async (req, res) => {
+    if (!TMDB_API_KEY) {
+        return res.status(400).json({ error: 'TMDB API key not configured' });
+    }
+    const q = req.query.query;
+    if (!q || typeof q !== 'string' || !q.trim()) {
+        return res.status(400).json({ error: 'Missing query' });
+    }
+    const url = `https://api.themoviedb.org/3/search/person?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(q.trim())}`;
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error('TMDB person search error:', error);
+        res.status(500).json({ error: 'Failed to fetch from TMDB' });
+    }
+});
+
+// TMDB person combined credits proxy
+app.get('/api/tmdb/person/:id/combined_credits', async (req, res) => {
+    if (!TMDB_API_KEY) {
+        return res.status(400).json({ error: 'TMDB API key not configured' });
+    }
+    const { id } = req.params;
+    const url = `https://api.themoviedb.org/3/person/${id}/combined_credits?api_key=${TMDB_API_KEY}`;
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error('TMDB person credits error:', error);
+        res.status(500).json({ error: 'Failed to fetch from TMDB' });
+    }
+});
+
 // TMDB details proxy
 app.get('/api/tmdb/:mediaType/:id', async (req, res) => {
     if (!TMDB_API_KEY) {

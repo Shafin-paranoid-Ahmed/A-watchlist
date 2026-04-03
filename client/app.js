@@ -66,6 +66,8 @@ const bulkRefetchAllBtn = document.getElementById('bulkRefetchAllBtn');
 // Search Elements
 const searchTitleBtn = document.getElementById('searchTitleBtn');
 const searchResults = document.getElementById('searchResults');
+const searchDirectorBtn = document.getElementById('searchDirectorBtn');
+const directorSearchResults = document.getElementById('directorSearchResults');
 
 // Stats elements
 const totalCount = document.getElementById('totalCount');
@@ -543,11 +545,25 @@ function setupEventListeners() {
             searchForTitle();
         }
     });
+
+    // Director search
+    if (searchDirectorBtn) {
+        searchDirectorBtn.addEventListener('click', searchForDirector);
+        document.getElementById('director')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchForDirector();
+            }
+        });
+    }
     
     // Close search results when clicking outside
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.title-search-group')) {
             searchResults.classList.remove('active');
+        }
+        if (!e.target.closest('.director-search-group')) {
+            if (directorSearchResults) directorSearchResults.classList.remove('active');
         }
     });
 
@@ -1428,6 +1444,9 @@ function openModal(id = null) {
         if (tmdbTvEl) tmdbTvEl.value = '';
     }
     
+    searchResults.classList.remove('active');
+    if (directorSearchResults) directorSearchResults.classList.remove('active');
+
     modalOverlay.classList.add('active');
     updateSeriesFormHint();
     document.getElementById('title').focus();
@@ -3028,6 +3047,191 @@ function renderSearchResults(results) {
     // Add click handlers
     searchResults.querySelectorAll('.search-result-item').forEach(item => {
         item.addEventListener('click', () => {
+            selectSearchResult(item.dataset.id, item.dataset.source, item.dataset.mediaType);
+        });
+    });
+}
+
+// ============================================
+// DIRECTOR SEARCH
+// ============================================
+
+async function searchForDirector() {
+    const directorInput = document.getElementById('director');
+    const query = (directorInput?.value || '').trim();
+
+    if (!query) {
+        showToast('Please enter a director name to search', 'error');
+        return;
+    }
+
+    const hasTmdb = serverHasTmdbKey || tmdbApiKey;
+    if (!hasTmdb) {
+        showToast('Director search requires a TMDB API key (server or Settings)', 'error');
+        return;
+    }
+
+    if (searchDirectorBtn) {
+        searchDirectorBtn.classList.add('loading');
+        searchDirectorBtn.disabled = true;
+    }
+
+    let people = [];
+    try {
+        let data;
+        if (serverHasTmdbKey) {
+            const res = await fetch(`/api/tmdb/search/person?query=${encodeURIComponent(query)}`);
+            data = await res.json();
+        } else {
+            const res = await fetch(`${TMDB_BASE_URL}/search/person?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}`);
+            data = await res.json();
+        }
+        if (data.results && data.results.length > 0) {
+            people = data.results
+                .filter(p => p.known_for_department === 'Directing')
+                .slice(0, 8);
+        }
+    } catch (error) {
+        console.error('Director search error:', error);
+    }
+
+    if (searchDirectorBtn) {
+        searchDirectorBtn.classList.remove('loading');
+        searchDirectorBtn.disabled = false;
+    }
+
+    if (people.length === 0) {
+        directorSearchResults.innerHTML = '<div class="no-results">No directors found. Try a different name.</div>';
+        directorSearchResults.classList.add('active');
+        return;
+    }
+
+    renderDirectorResults(people);
+}
+
+function renderDirectorResults(people) {
+    directorSearchResults.innerHTML = people.map(person => {
+        const photo = person.profile_path
+            ? `<img src="${TMDB_IMAGE_BASE}w185${person.profile_path}" alt="${escapeHtml(person.name)}">`
+            : `<span class="search-result-poster-placeholder">🎬</span>`;
+        const knownFor = (person.known_for || [])
+            .slice(0, 3)
+            .map(k => k.title || k.name)
+            .filter(Boolean)
+            .join(', ');
+        return `
+            <div class="search-result-item director-result-item" data-person-id="${person.id}">
+                <div class="search-result-poster">${photo}</div>
+                <div class="search-result-info">
+                    <div class="search-result-title">${escapeHtml(person.name)}</div>
+                    <div class="search-result-meta">
+                        <span>Director</span>
+                        ${knownFor ? `<span class="director-known-for" title="${escapeHtml(knownFor)}">Known for: ${escapeHtml(knownFor)}</span>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    directorSearchResults.classList.add('active');
+
+    directorSearchResults.querySelectorAll('.director-result-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const personId = item.dataset.personId;
+            const name = item.querySelector('.search-result-title')?.textContent || '';
+            showDirectorFilmography(personId, name);
+        });
+    });
+}
+
+async function showDirectorFilmography(personId, directorName) {
+    directorSearchResults.classList.remove('active');
+
+    if (searchDirectorBtn) {
+        searchDirectorBtn.classList.add('loading');
+        searchDirectorBtn.disabled = true;
+    }
+
+    let results = [];
+    try {
+        let data;
+        if (serverHasTmdbKey) {
+            const res = await fetch(`/api/tmdb/person/${personId}/combined_credits`);
+            data = await res.json();
+        } else {
+            const res = await fetch(`${TMDB_BASE_URL}/person/${personId}/combined_credits?api_key=${tmdbApiKey}`);
+            data = await res.json();
+        }
+        if (data.crew && data.crew.length > 0) {
+            const directed = data.crew
+                .filter(c => c.job === 'Director')
+                .sort((a, b) => {
+                    const da = a.release_date || a.first_air_date || '';
+                    const db = b.release_date || b.first_air_date || '';
+                    return db.localeCompare(da);
+                });
+            const seen = new Set();
+            results = directed
+                .filter(c => {
+                    if (seen.has(c.id)) return false;
+                    seen.add(c.id);
+                    return true;
+                })
+                .slice(0, 20)
+                .map(c => ({
+                    id: c.id,
+                    title: c.title || c.name,
+                    year: (c.release_date || c.first_air_date || '').split('-')[0],
+                    type: c.media_type === 'tv' ? 'series' : 'movie',
+                    mediaType: c.media_type,
+                    poster: c.poster_path ? getTMDBPosterUrl(c.poster_path, 'w185') : '',
+                    rating: c.vote_average ? c.vote_average.toFixed(1) : null,
+                    source: 'tmdb'
+                }));
+        }
+    } catch (error) {
+        console.error('Director filmography error:', error);
+    }
+
+    if (searchDirectorBtn) {
+        searchDirectorBtn.classList.remove('loading');
+        searchDirectorBtn.disabled = false;
+    }
+
+    if (results.length === 0) {
+        directorSearchResults.innerHTML = `<div class="no-results">No directed titles found for ${escapeHtml(directorName)}.</div>`;
+        directorSearchResults.classList.add('active');
+        return;
+    }
+
+    directorSearchResults.innerHTML = `<div class="director-filmography-header">Directed by ${escapeHtml(directorName)}</div>`;
+    const itemsHtml = results.map(result => {
+        return `
+            <div class="search-result-item" data-id="${result.id}" data-source="${result.source}" data-media-type="${result.mediaType || result.type}">
+                <div class="search-result-poster">
+                    ${result.poster
+                        ? `<img src="${result.poster}" alt="${escapeHtml(result.title)}">`
+                        : `<span class="search-result-poster-placeholder">🎬</span>`
+                    }
+                </div>
+                <div class="search-result-info">
+                    <div class="search-result-title">${escapeHtml(result.title)}</div>
+                    <div class="search-result-meta">
+                        <span>${result.year || 'N/A'}</span>
+                        <span>${result.type}</span>
+                        ${result.rating ? `<span class="search-result-rating">⭐ ${result.rating}</span>` : ''}
+                        <span class="search-result-source">TMDB</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    directorSearchResults.innerHTML += itemsHtml;
+    directorSearchResults.classList.add('active');
+
+    directorSearchResults.querySelectorAll('.search-result-item').forEach(item => {
+        item.addEventListener('click', () => {
+            directorSearchResults.classList.remove('active');
             selectSearchResult(item.dataset.id, item.dataset.source, item.dataset.mediaType);
         });
     });

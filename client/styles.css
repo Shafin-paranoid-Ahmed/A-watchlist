@@ -1829,6 +1829,39 @@ form {
     color: var(--text-muted);
 }
 
+/* Director search */
+.director-search-group {
+    position: relative;
+}
+
+.search-director-btn {
+    padding: var(--space-sm);
+}
+
+.search-director-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+
+.director-known-for {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-style: italic;
+    opacity: 0.8;
+}
+
+.director-filmography-header {
+    padding: var(--space-sm) var(--space-md);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-blue);
+    border-bottom: 1px solid var(--border-color);
+    letter-spacing: 0.02em;
+}
+
 /* ============================================
    SETTINGS MODAL
    ============================================ */
