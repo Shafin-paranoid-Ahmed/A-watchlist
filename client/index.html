@@ -38,6 +38,10 @@
             </button>
         </header>
 
+        <div class="api-unreachable-banner" id="apiUnreachableBanner" style="display: none;" role="alert">
+            <p><strong>This deploy is not reaching the Node backend</strong> (no <code>/api</code>). Cloud sync and shared lists will not work. Open <code>/api/config</code> on this same domain: if you see 404 or HTML, push the repo’s <code>vercel.json</code> and redeploy. In Vercel → Settings → Environment Variables, add <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> (not only in a local <code>.env</code> file).</p>
+        </div>
+
         <!-- Stats Bar -->
         <section class="stats-bar">
             <div class="stat">
@@ -65,7 +69,7 @@
                     <circle cx="11" cy="11" r="8"/>
                     <path d="m21 21-4.35-4.35"/>
                 </svg>
-                <input type="text" id="searchInput" placeholder="Search your watchlist...">
+                <input type="text" id="searchInput" placeholder="Title, year, genre, notes, status, S1E2…" autocomplete="off">
             </div>
             <div class="filter-buttons">
                 <button class="filter-btn active" data-filter="all">All</button>
@@ -74,6 +78,20 @@
                 <button class="filter-btn" data-filter="watched">Watched</button>
                 <button class="filter-btn" data-filter="watching">Watching</button>
                 <button class="filter-btn" data-filter="want-to-watch">Want to Watch</button>
+            </div>
+            <div class="sort-box">
+                <label for="sortSelect" class="sort-label">Sort</label>
+                <select id="sortSelect" class="sort-select" aria-label="Sort watchlist">
+                    <option value="added-desc">Recently added</option>
+                    <option value="added-asc">Oldest added</option>
+                    <option value="title-asc">Title A–Z</option>
+                    <option value="title-desc">Title Z–A</option>
+                    <option value="year-desc">Year (newest)</option>
+                    <option value="year-asc">Year (oldest)</option>
+                    <option value="imdb-desc">IMDB (high → low)</option>
+                    <option value="imdb-asc">IMDB (low → high)</option>
+                    <option value="status">Status (queue → done)</option>
+                </select>
             </div>
             <button class="import-btn" id="importBtn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -302,7 +320,10 @@
                                 <li><code>rating</code> - Your rating (0-10)</li>
                                 <li><code>status</code> - "watched", "watching", or "want-to-watch"</li>
                                 <li><code>genre</code> or <code>genres</code> - Genre(s); use <code>Games</code> for video games</li>
+                                <li><code>imdb_link</code>, <code>poster_url</code>, <code>letterboxd_link</code>, <code>rotten_tomatoes_link</code>, <code>justwatch_link</code>, <code>notes</code></li>
+                                <li><code>imdb_rating</code>, <code>rt_rating</code> - IMDB score and Rotten Tomatoes % (optional)</li>
                             </ul>
+                            <p class="import-csv-note">Use <strong>Settings → Export CSV</strong> to download this app’s lists in the same column layout.</p>
                         </div>
 
                         <!-- Paste titles -->
@@ -443,7 +464,8 @@
                     
                     <div class="setting-section">
                         <h3>📦 Data Management</h3>
-                        <p class="setting-desc">Share with someone who doesn’t have cloud sync: export JSON and send the file; they use Import backup on the same or another device.</p>
+                        <p class="setting-desc">Export <strong>JSON</strong> for a full backup (episodes, TMDB cache) — use Import backup to restore. Export <strong>CSV</strong> for spreadsheets or the app’s Custom CSV import (main fields only).</p>
+                        <p class="setting-desc"><strong>Sharing the same list:</strong> Your deployed site must have <code>SUPABASE_URL</code> and a service role key in <em>server</em> env (e.g. Vercel). Send the <strong>Copy link</strong> URL from the app — it includes <code>?p=…</code> (or <code>?list=shared</code> for Watch together). They must open that link on the <strong>same</strong> live URL, not <code>localhost</code> on your PC. Open the app once yourself after Supabase is wired so your list uploads; then their refresh shows it.</p>
                         <div class="data-actions">
                             <button type="button" class="btn-secondary" id="exportDataBtn">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
@@ -451,7 +473,16 @@
                                     <polyline points="7 10 12 15 17 10"/>
                                     <line x1="12" y1="15" x2="12" y2="3"/>
                                 </svg>
-                                Export Watchlist
+                                Export JSON
+                            </button>
+                            <button type="button" class="btn-secondary" id="exportCsvBtn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="8" y1="13" x2="16" y2="13"/>
+                                    <line x1="8" y1="17" x2="16" y2="17"/>
+                                </svg>
+                                Export CSV
                             </button>
                             <button type="button" class="btn-secondary" id="importBackupBtn">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">

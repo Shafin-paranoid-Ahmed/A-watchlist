@@ -23,12 +23,6 @@ const ENRICH_BATCH_MAX = 120;
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-// Local: serve client/ with Express.
-// Vercel: ignores express.static — static files must live in public/ (copied by vercel-build).
-if (!process.env.VERCEL) {
-    app.use(express.static(path.join(__dirname, '..', 'client')));
-}
-
 // ============================================
 // API PROXY ENDPOINTS
 // These hide your API keys from the client
@@ -237,14 +231,17 @@ app.put('/api/sync/:slug', async (req, res) => {
     }
 });
 
-const clientDir = path.join(__dirname, '..', 'client');
+// UI: dev uses ./client; production on Vercel uses ./public (filled by `npm run vercel-build`).
+const staticRoot = process.env.VERCEL
+    ? path.join(__dirname, '..', 'public')
+    : path.join(__dirname, '..', 'client');
 
-// SPA fallback (local only). On Vercel, `public/index.html` is served from the CDN.
-if (!process.env.VERCEL) {
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(clientDir, 'index.html'));
-    });
-}
+app.use(express.static(staticRoot));
+
+app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(staticRoot, 'index.html'));
+});
 
 // Start server locally (not when loaded by Vercel via root index.js)
 if (require.main === module) {
@@ -254,7 +251,7 @@ if (require.main === module) {
         console.log('   WATCHLIST SERVER');
         console.log('═══════════════════════════════════════════');
         console.log(`   🌐 Running on: http://localhost:${PORT}`);
-        console.log(`   📁 Serving:    ./client`);
+        console.log(`   📁 Serving:    ${process.env.VERCEL ? './public' : './client'}`);
         console.log('───────────────────────────────────────────');
         console.log(`   🎬 OMDB API:   ${OMDB_API_KEY ? '✓ configured' : '✗ not set'}`);
         console.log(`   🎞️  TMDB API:   ${TMDB_API_KEY ? '✓ configured' : '✗ not set'}`);

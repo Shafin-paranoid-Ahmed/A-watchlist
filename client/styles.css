@@ -390,6 +390,44 @@ body::before {
     font-weight: 600;
 }
 
+.sort-box {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.sort-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.sort-select {
+    min-width: 10.5rem;
+    padding: var(--space-sm) var(--space-md);
+    padding-right: 2rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.sort-select:hover,
+.sort-select:focus {
+    border-color: var(--accent-gold);
+    outline: none;
+}
+
+.sort-select:focus {
+    box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.12);
+}
+
 .import-btn {
     display: flex;
     align-items: center;
@@ -1244,6 +1282,13 @@ form {
     line-height: 1.6;
 }
 
+.import-csv-note {
+    margin-top: var(--space-md);
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
 .import-tabs {
     display: flex;
     gap: var(--space-sm);
@@ -1731,6 +1776,28 @@ form {
     color: var(--text-muted);
 }
 
+.api-unreachable-banner {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    border-radius: var(--radius-md);
+    padding: var(--space-md) var(--space-lg);
+    margin: 0 var(--space-lg) var(--space-md);
+    color: var(--text-secondary);
+    line-height: 1.55;
+    font-size: 0.92rem;
+}
+
+.api-unreachable-banner p {
+    margin: 0;
+}
+
+.api-unreachable-banner code {
+    font-size: 0.85em;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: var(--bg-elevated);
+}
+
 .setting-section {
     margin-bottom: var(--space-xl);
     padding-bottom: var(--space-xl);
@@ -1968,6 +2035,16 @@ form {
     
     .filter-buttons {
         justify-content: center;
+    }
+
+    .sort-box {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .sort-select {
+        flex: 1;
+        min-width: 0;
     }
     
     .add-btn {

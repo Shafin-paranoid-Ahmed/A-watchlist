@@ -58,6 +58,7 @@ const omdbApiKeyInput = document.getElementById('omdbApiKey');
 const saveApiKeyBtn = document.getElementById('saveApiKey');
 const apiKeyStatus = document.getElementById('apiKeyStatus');
 const exportDataBtn = document.getElementById('exportDataBtn');
+const exportCsvBtn = document.getElementById('exportCsvBtn');
 const clearDataBtn = document.getElementById('clearDataBtn');
 const bulkFetchBtn = document.getElementById('bulkFetchBtn');
 
@@ -74,7 +75,10 @@ const wantToWatchCount = document.getElementById('wantToWatchCount');
 // State
 let watchlist = [];
 let currentFilter = 'all';
+/** Normalized lowercase search string (trimmed, collapsed spaces) */
 let searchQuery = '';
+/** When not searching, controls card order (persisted) */
+let sortMode = 'added-desc';
 let editingId = null;
 let currentImportSource = 'letterboxd';
 let pendingImports = [];
@@ -84,6 +88,8 @@ let detectedImportStatus = 'watched';
 
 const SEARCH_DEBOUNCE_MS = 220;
 let searchDebounceTimer = null;
+
+const SORT_MODE_STORAGE_KEY = 'watchlist_sort_mode';
 
 const ENRICH_BATCH_SIZE = 120;
 
@@ -300,6 +306,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Check if server has API keys configured
 async function checkServerConfig() {
+    const banner = document.getElementById('apiUnreachableBanner');
+    const hideBanner = () => {
+        if (banner) banner.style.display = 'none';
+    };
     try {
         const response = await fetch('/api/config');
         if (response.ok) {
@@ -311,9 +321,14 @@ async function checkServerConfig() {
                 sharedListSlug = String(config.sharedListSlug).toLowerCase().trim() || 'watch-together';
             }
             console.log('Server API config:', config);
+            hideBanner();
+        } else {
+            if (banner) banner.style.display = 'block';
+            console.warn('/api/config failed:', response.status, '(backend missing or wrong Vercel routing)');
         }
     } catch (error) {
-        console.log('Using client-side API keys');
+        if (banner) banner.style.display = 'block';
+        console.warn('Using client-side API keys — /api/config unreachable', error);
     }
 }
 
@@ -338,18 +353,32 @@ function setupEventListeners() {
     
     // Search (debounced — avoids repainting the grid on every keystroke)
     searchInput.addEventListener('input', (e) => {
-        const value = e.target.value.toLowerCase();
+        const raw = e.target.value;
         const apply = () => {
-            searchQuery = value;
+            searchQuery = normalizeSearchQuery(raw);
             renderWatchlist();
         };
         if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-        if (value === '') {
+        if (normalizeSearchQuery(raw) === '') {
             apply();
             return;
         }
         searchDebounceTimer = setTimeout(apply, SEARCH_DEBOUNCE_MS);
     });
+
+    const sortSelect = document.getElementById('sortSelect');
+    if (sortSelect) {
+        const saved = localStorage.getItem(SORT_MODE_STORAGE_KEY);
+        if (saved && [...sortSelect.options].some(o => o.value === saved)) {
+            sortMode = saved;
+            sortSelect.value = saved;
+        }
+        sortSelect.addEventListener('change', () => {
+            sortMode = sortSelect.value;
+            localStorage.setItem(SORT_MODE_STORAGE_KEY, sortMode);
+            renderWatchlist();
+        });
+    }
     
     // Filter buttons
     filterButtons.forEach(btn => {
@@ -467,6 +496,7 @@ function setupEventListeners() {
     
     // Data management
     exportDataBtn.addEventListener('click', exportData);
+    exportCsvBtn?.addEventListener('click', exportWatchlistCsv);
     document.getElementById('importBackupBtn')?.addEventListener('click', () => {
         document.getElementById('importBackupFile')?.click();
     });
@@ -529,7 +559,40 @@ async function loadWatchlist() {
             if (r.ok) {
                 const j = await r.json();
                 if (Array.isArray(j.items)) {
-                    watchlist = j.items;
+                    const cloudItems = j.items;
+                    let localItems = [];
+                    try {
+                        const localRaw = localStorage.getItem(getLocalStorageKey());
+                        localItems = localRaw ? JSON.parse(localRaw) : [];
+                    } catch (_) {
+                        localItems = [];
+                    }
+                    if (
+                        !Array.isArray(localItems) ||
+                        localItems.some(x => typeof x !== 'object')
+                    ) {
+                        localItems = [];
+                    }
+                    // Supabase often has no row yet: API returns []. Don't wipe a full local list —
+                    // keep local data and upload it so shared ?p= links work for others.
+                    if (cloudItems.length === 0 && localItems.length > 0) {
+                        watchlist = localItems;
+                        normalizeWatchlistEpisodes();
+                        localStorage.setItem(
+                            getLocalStorageKey(),
+                            JSON.stringify(watchlist)
+                        );
+                        scheduleCloudPush();
+                        if (!sessionStorage.getItem('sync_seed_toast')) {
+                            sessionStorage.setItem('sync_seed_toast', '1');
+                            showToast(
+                                'Saving your watchlist to the cloud so people with your link can see it…',
+                                'success'
+                            );
+                        }
+                        return;
+                    }
+                    watchlist = cloudItems;
                     normalizeWatchlistEpisodes();
                     localStorage.setItem(getLocalStorageKey(), JSON.stringify(watchlist));
                     return;
@@ -943,7 +1006,7 @@ function generateId() {
 // ============================================
 
 function renderWatchlist() {
-    const filtered = filterWatchlist();
+    const filtered = filterAndSortWatchlist();
     
     if (filtered.length === 0) {
         watchlistGrid.innerHTML = '';
@@ -956,35 +1019,217 @@ function renderWatchlist() {
     hydrateSeasonWatchCheckboxes();
 }
 
-function filterWatchlist() {
-    return watchlist.filter(item => {
-        const epSearch =
-            !!searchQuery &&
-            item.type === 'series' &&
-            Array.isArray(item.episodes) &&
-            item.episodes.some(
-                ep =>
-                    (ep.title && ep.title.toLowerCase().includes(searchQuery)) ||
-                    `s${ep.season}e${ep.episode}`.includes(searchQuery.replace(/\s/g, ''))
-            );
-        // Search filter
-        const matchesSearch =
-            !searchQuery ||
-            item.title.toLowerCase().includes(searchQuery) ||
-            (item.genre && item.genre.toLowerCase().includes(searchQuery)) ||
-            (item.notes && item.notes.toLowerCase().includes(searchQuery)) ||
-            epSearch;
-        
-        // Category filter
+function normalizeSearchQuery(raw) {
+    return String(raw || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+}
+
+function getSearchableBlob(item) {
+    const parts = [
+        item.title,
+        item.genre,
+        item.notes,
+        item.imdbLink,
+        item.letterboxdLink,
+        item.rottenTomatoesLink,
+        item.justWatchLink,
+        item.year != null ? String(item.year) : '',
+        item.type === 'series' ? 'series tv show television' : '',
+        item.type === 'movie' ? 'movie film' : ''
+    ];
+    const st = String(item.status || '').replace(/-/g, ' ');
+    parts.push(st);
+    if (item.status === 'want-to-watch') parts.push('want backlog planned queue');
+    if (item.status === 'watching') parts.push('current progress now');
+    if (item.status === 'watched') parts.push('seen finished done');
+    if (item.imdbRating != null && item.imdbRating !== '') parts.push(String(item.imdbRating));
+    if (item.rtRating != null && item.rtRating !== '') parts.push(String(item.rtRating));
+    if (item.myRating != null && item.myRating !== '') parts.push(String(item.myRating));
+    if (item.type === 'series' && Array.isArray(item.episodes)) {
+        for (const ep of item.episodes) {
+            if (ep && ep.title) parts.push(ep.title);
+            const s = ep.season;
+            const e = ep.episode;
+            if (Number.isFinite(Number(s)) && Number.isFinite(Number(e))) {
+                const sn = parseInt(s, 10);
+                const en = parseInt(e, 10);
+                parts.push(
+                    `s${sn}e${en}`,
+                    `s${sn} e${en}`,
+                    `${sn}x${en}`,
+                    `${sn}×${en}`,
+                    `season ${sn} episode ${en}`,
+                    `season${sn}episode${en}`
+                );
+            }
+        }
+    }
+    return parts
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+}
+
+function itemMatchesSearch(item, normalizedQuery) {
+    if (!normalizedQuery) return true;
+    const tokens = normalizedQuery.split(' ').filter(Boolean);
+    if (tokens.length === 0) return true;
+    const blob = getSearchableBlob(item);
+    return tokens.every(t => blob.includes(t));
+}
+
+function searchRelevanceScore(item, normalizedQuery) {
+    if (!normalizedQuery) return 0;
+    const title = String(item.title || '').toLowerCase();
+    let score = 0;
+    if (title === normalizedQuery) score += 200;
+    else if (title.startsWith(normalizedQuery)) score += 120;
+    else if (title.includes(normalizedQuery)) score += 75;
+    const tokens = normalizedQuery.split(' ').filter(Boolean);
+    for (const t of tokens) {
+        if (!t) continue;
+        if (title === t) score += 55;
+        else if (title.startsWith(t)) score += 38;
+        else if (title.includes(t)) score += 22;
+    }
+    const blob = getSearchableBlob(item);
+    for (const t of tokens) {
+        if (t && blob.includes(t)) score += 4;
+    }
+    return score;
+}
+
+function compareTitleAsc(a, b) {
+    return String(a.title || '').localeCompare(String(b.title || ''), undefined, {
+        sensitivity: 'base',
+        numeric: true
+    });
+}
+
+function dateAddedTs(item) {
+    const t = new Date(item.dateAdded).getTime();
+    return Number.isFinite(t) ? t : 0;
+}
+
+function parseYear(y) {
+    const n = parseInt(y, 10);
+    return Number.isFinite(n) ? n : null;
+}
+
+function parseImdbRating(r) {
+    const n = parseFloat(r);
+    return Number.isFinite(n) ? n : null;
+}
+
+function statusRank(status) {
+    if (status === 'want-to-watch') return 0;
+    if (status === 'watching') return 1;
+    if (status === 'watched') return 2;
+    return 3;
+}
+
+function sortWatchlistItems(items) {
+    const list = [...items];
+
+    if (searchQuery) {
+        list.sort((a, b) => {
+            const d = searchRelevanceScore(b, searchQuery) - searchRelevanceScore(a, searchQuery);
+            if (d !== 0) return d;
+            return compareTitleAsc(a, b);
+        });
+        return list;
+    }
+
+    switch (sortMode) {
+        case 'added-asc':
+            list.sort((a, b) => dateAddedTs(a) - dateAddedTs(b) || compareTitleAsc(a, b));
+            break;
+        case 'added-desc':
+            list.sort((a, b) => dateAddedTs(b) - dateAddedTs(a) || compareTitleAsc(a, b));
+            break;
+        case 'title-asc':
+            list.sort(compareTitleAsc);
+            break;
+        case 'title-desc':
+            list.sort((a, b) => compareTitleAsc(b, a));
+            break;
+        case 'year-desc': {
+            list.sort((a, b) => {
+                const ya = parseYear(a.year);
+                const yb = parseYear(b.year);
+                if (ya == null && yb == null) return compareTitleAsc(a, b);
+                if (ya == null) return 1;
+                if (yb == null) return -1;
+                if (yb !== ya) return yb - ya;
+                return compareTitleAsc(a, b);
+            });
+            break;
+        }
+        case 'year-asc': {
+            list.sort((a, b) => {
+                const ya = parseYear(a.year);
+                const yb = parseYear(b.year);
+                if (ya == null && yb == null) return compareTitleAsc(a, b);
+                if (ya == null) return 1;
+                if (yb == null) return -1;
+                if (ya !== yb) return ya - yb;
+                return compareTitleAsc(a, b);
+            });
+            break;
+        }
+        case 'imdb-desc': {
+            list.sort((a, b) => {
+                const ra = parseImdbRating(a.imdbRating);
+                const rb = parseImdbRating(b.imdbRating);
+                if (ra == null && rb == null) return compareTitleAsc(a, b);
+                if (ra == null) return 1;
+                if (rb == null) return -1;
+                if (rb !== ra) return rb - ra;
+                return compareTitleAsc(a, b);
+            });
+            break;
+        }
+        case 'imdb-asc': {
+            list.sort((a, b) => {
+                const ra = parseImdbRating(a.imdbRating);
+                const rb = parseImdbRating(b.imdbRating);
+                if (ra == null && rb == null) return compareTitleAsc(a, b);
+                if (ra == null) return 1;
+                if (rb == null) return -1;
+                if (ra !== rb) return ra - rb;
+                return compareTitleAsc(a, b);
+            });
+            break;
+        }
+        case 'status':
+            list.sort((a, b) => {
+                const dr = statusRank(a.status) - statusRank(b.status);
+                if (dr !== 0) return dr;
+                return compareTitleAsc(a, b);
+            });
+            break;
+        default:
+            list.sort((a, b) => dateAddedTs(b) - dateAddedTs(a) || compareTitleAsc(a, b));
+    }
+    return list;
+}
+
+function filterAndSortWatchlist() {
+    const filtered = watchlist.filter(item => {
+        const matchesSearch = itemMatchesSearch(item, searchQuery);
+
         let matchesFilter = true;
         if (currentFilter === 'movie') matchesFilter = item.type === 'movie';
         else if (currentFilter === 'series') matchesFilter = item.type === 'series';
         else if (currentFilter === 'watched') matchesFilter = item.status === 'watched';
         else if (currentFilter === 'watching') matchesFilter = item.status === 'watching';
         else if (currentFilter === 'want-to-watch') matchesFilter = item.status === 'want-to-watch';
-        
+
         return matchesSearch && matchesFilter;
     });
+    return sortWatchlistItems(filtered);
 }
 
 function createCard(item) {
@@ -1560,7 +1805,12 @@ function transformCustomCSV(data) {
         const status = row.status ? normalizeStatus(row.status) : 'want-to-watch';
         const rating = parseFloat(row.rating || row.my_rating || row.score) || null;
         const genre = row.genre || row.genres || '';
-        
+        const imdbRatingRaw = row.imdb_rating != null ? String(row.imdb_rating).trim() : '';
+        const imdbRatingParsed =
+            imdbRatingRaw && imdbRatingRaw !== 'N/A' ? parseFloat(imdbRatingRaw) : NaN;
+        const rtRaw = row.rt_rating != null ? String(row.rt_rating).trim() : '';
+        const rtParsed = rtRaw ? parseInt(rtRaw.replace(/%/g, ''), 10) : NaN;
+
         return {
             id: generateId(),
             title: title,
@@ -1575,6 +1825,8 @@ function transformCustomCSV(data) {
             rottenTomatoesLink: row.rotten_tomatoes || row.rt_link || '',
             justWatchLink: row.justwatch || row.justwatch_link || '',
             notes: row.notes || row.comments || row.review || '',
+            imdbRating: Number.isFinite(imdbRatingParsed) ? imdbRatingParsed : null,
+            rtRating: Number.isFinite(rtParsed) ? rtParsed : null,
             dateAdded: new Date().toISOString(),
             ...(type === 'series' ? { episodes: [] } : {})
         };
@@ -1938,7 +2190,68 @@ function exportData() {
     a.download = `watchlist-backup-${slug}-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Exported! Send this file to import on another device.', 'success');
+    showToast('JSON exported — use Import backup to restore the full list.', 'success');
+}
+
+function escapeCsvCell(val) {
+    if (val == null) return '';
+    const s = String(val);
+    if (/[",\r\n]/.test(s)) {
+        return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+}
+
+function exportWatchlistCsv() {
+    const headers = [
+        'title',
+        'year',
+        'type',
+        'status',
+        'rating',
+        'genre',
+        'imdb_link',
+        'poster_url',
+        'letterboxd_link',
+        'rotten_tomatoes_link',
+        'justwatch_link',
+        'notes',
+        'imdb_rating',
+        'rt_rating'
+    ];
+    const lines = [headers.map(escapeCsvCell).join(',')];
+    for (const item of watchlist) {
+        lines.push(
+            [
+                item.title,
+                item.year ?? '',
+                item.type ?? '',
+                item.status ?? '',
+                item.myRating ?? '',
+                item.genre ?? '',
+                item.imdbLink ?? '',
+                item.posterUrl ?? '',
+                item.letterboxdLink ?? '',
+                item.rottenTomatoesLink ?? '',
+                item.justWatchLink ?? '',
+                item.notes ?? '',
+                item.imdbRating ?? '',
+                item.rtRating ?? ''
+            ]
+                .map(escapeCsvCell)
+                .join(',')
+        );
+    }
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const slug = listMode === 'shared' ? 'together' : getActiveProfileSlug();
+    a.download = `watchlist-${slug}-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('CSV exported — open in Excel/Sheets or re-import via Import → Custom CSV.', 'success');
 }
 
 function importBackupFromJsonFile(file) {
