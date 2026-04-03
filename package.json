@@ -11,6 +11,7 @@
     "vercel-build": "node scripts/copy-client-to-public.js"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2"
@@ -18,6 +19,11 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["watchlist", "movies", "series", "tracker"],
+  "keywords": [
+    "watchlist",
+    "movies",
+    "series",
+    "tracker"
+  ],
   "license": "MIT"
 }
