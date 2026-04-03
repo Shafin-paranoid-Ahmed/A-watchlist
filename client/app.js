@@ -87,6 +87,13 @@ let searchDebounceTimer = null;
 
 const ENRICH_BATCH_SIZE = 120;
 
+const TMDB_SEASON1_DELAY_MS = 130;
+const TMDB_SEASON1_MAX_FETCHES = 40;
+/** Max series we try to resolve (search + season) per hydrate pass */
+const TMDB_SEASON1_MAX_RESOLVE_ATTEMPTS = 40;
+
+let season1HydrateRunning = false;
+
 // ============================================
 // PROFILES (you vs partner — separate lists, same site)
 // ============================================
@@ -285,6 +292,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderWatchlist();
     updateStats();
     setupEventListeners();
+    void hydrateTmdbSeason1Guides();
 });
 
 // Check if server has API keys configured
@@ -323,6 +331,7 @@ function setupEventListeners() {
     
     // Form submission
     watchlistForm.addEventListener('submit', handleFormSubmit);
+    document.getElementById('type')?.addEventListener('change', updateSeriesFormHint);
     
     // Search (debounced — avoids repainting the grid on every keystroke)
     searchInput.addEventListener('input', (e) => {
@@ -348,6 +357,9 @@ function setupEventListeners() {
             renderWatchlist();
         });
     });
+
+    watchlistGrid.addEventListener('change', handleEpisodeGridChange);
+    watchlistGrid.addEventListener('click', handleEpisodeGridClick);
     
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
@@ -515,6 +527,7 @@ async function loadWatchlist() {
                 const j = await r.json();
                 if (Array.isArray(j.items)) {
                     watchlist = j.items;
+                    normalizeWatchlistEpisodes();
                     localStorage.setItem(getLocalStorageKey(), JSON.stringify(watchlist));
                     return;
                 }
@@ -526,6 +539,322 @@ async function loadWatchlist() {
 
     const data = localStorage.getItem(getLocalStorageKey());
     watchlist = data ? JSON.parse(data) : [];
+    normalizeWatchlistEpisodes();
+}
+
+function normalizeWatchlistEpisodes() {
+    if (!Array.isArray(watchlist)) return;
+    watchlist.forEach(normalizeItemEpisodes);
+}
+
+function normalizeItemEpisodes(item) {
+    if (!item || item.type !== 'series') {
+        if (item) {
+            if ('episodes' in item) delete item.episodes;
+            if ('tmdbTvId' in item) delete item.tmdbTvId;
+            if ('tmdbSeason1Guide' in item) delete item.tmdbSeason1Guide;
+        }
+        return;
+    }
+    if (item.tmdbTvId != null) {
+        const tid = parseInt(item.tmdbTvId, 10);
+        item.tmdbTvId = Number.isFinite(tid) && tid > 0 ? tid : null;
+    }
+    if (item.tmdbSeason1Guide && typeof item.tmdbSeason1Guide === 'object') {
+        if (!Array.isArray(item.tmdbSeason1Guide.episodes)) {
+            delete item.tmdbSeason1Guide;
+        } else {
+            item.tmdbSeason1Guide.episodes = item.tmdbSeason1Guide.episodes
+                .filter(ep => ep && Number.isFinite(Number(ep.episode_number)))
+                .map(ep => ({
+                    episode_number: parseInt(ep.episode_number, 10),
+                    name: typeof ep.name === 'string' ? ep.name : '',
+                    air_date: typeof ep.air_date === 'string' ? ep.air_date : '',
+                    runtime: ep.runtime != null ? ep.runtime : null
+                }));
+            if (item.tmdbSeason1Guide.tmdbTvId != null) {
+                const g = parseInt(item.tmdbSeason1Guide.tmdbTvId, 10);
+                item.tmdbSeason1Guide.tmdbTvId = Number.isFinite(g) ? g : item.tmdbTvId;
+            }
+        }
+    }
+    if (!Array.isArray(item.episodes)) {
+        item.episodes = [];
+        return;
+    }
+    item.episodes = item.episodes
+        .filter(ep => ep && Number.isFinite(Number(ep.season)) && Number.isFinite(Number(ep.episode)))
+        .map(ep => ({
+            season: Math.max(1, parseInt(ep.season, 10)),
+            episode: Math.max(1, parseInt(ep.episode, 10)),
+            title: typeof ep.title === 'string' ? ep.title : '',
+            watched: !!ep.watched
+        }));
+}
+
+function getEpisodesArray(item) {
+    if (!item || item.type !== 'series') return [];
+    return Array.isArray(item.episodes) ? item.episodes : [];
+}
+
+function sortEpisodesList(eps) {
+    return [...eps].sort((a, b) => a.season - b.season || a.episode - b.episode);
+}
+
+function groupEpisodesBySeason(eps) {
+    const sorted = sortEpisodesList(eps);
+    const map = new Map();
+    for (const ep of sorted) {
+        if (!map.has(ep.season)) map.set(ep.season, []);
+        map.get(ep.season).push(ep);
+    }
+    return Array.from(map.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([season, list]) => ({ season, episodes: list }));
+}
+
+function seasonWatchProgress(epsInSeason) {
+    const total = epsInSeason.length;
+    const watched = epsInSeason.filter(e => e.watched).length;
+    return { watched, total };
+}
+
+function hydrateSeasonWatchCheckboxes() {
+    document.querySelectorAll('.season-watched-cb').forEach(cb => {
+        const itemId = cb.dataset.itemId;
+        const season = parseInt(cb.dataset.season, 10);
+        const item = watchlist.find(i => i.id === itemId);
+        if (!item || !Array.isArray(item.episodes) || !Number.isFinite(season)) return;
+        const eps = item.episodes.filter(e => e.season === season);
+        if (eps.length === 0) return;
+        const n = eps.filter(e => e.watched).length;
+        cb.indeterminate = n > 0 && n < eps.length;
+        cb.checked = n === eps.length;
+    });
+}
+
+function syncSeasonCheckboxInCard(card, item, season) {
+    if (!card || !item) return;
+    const cb = card.querySelector(`.season-watched-cb[data-item-id="${item.id}"][data-season="${season}"]`);
+    if (!cb) return;
+    const eps = item.episodes.filter(e => e.season === season);
+    if (eps.length === 0) return;
+    const n = eps.filter(e => e.watched).length;
+    cb.indeterminate = n > 0 && n < eps.length;
+    cb.checked = n === eps.length;
+    const prog = card.querySelector(`.episode-season-progress[data-season="${season}"]`);
+    if (prog) prog.textContent = `${n}/${eps.length}`;
+}
+
+function refreshSeriesEpisodesUI(itemId) {
+    const item = watchlist.find(i => i.id === itemId);
+    const card = document.querySelector(`.card[data-id="${itemId}"]`);
+    if (!item || !card || item.type !== 'series') return;
+    const el = card.querySelector('.card-episodes');
+    if (!el) return;
+    const wasOpen = el.open;
+    const openSeasons = new Set();
+    card.querySelectorAll('.episode-season-details[open]').forEach(d => {
+        const s = parseInt(d.dataset.season, 10);
+        if (Number.isFinite(s)) openSeasons.add(s);
+    });
+    const temp = document.createElement('div');
+    temp.innerHTML = renderSeriesEpisodesBlock(item).trim();
+    const newEl = temp.firstElementChild;
+    if (!newEl) return;
+    el.replaceWith(newEl);
+    newEl.open = wasOpen;
+    newEl.querySelectorAll('.episode-season-details').forEach(d => {
+        const s = parseInt(d.dataset.season, 10);
+        if (openSeasons.has(s)) d.open = true;
+    });
+    hydrateSeasonWatchCheckboxes();
+    updateCardEpisodeSummary(itemId);
+}
+
+function episodeSummaryText(item) {
+    const eps = sortEpisodesList(getEpisodesArray(item));
+    if (eps.length === 0) return 'Episodes — add S/E below';
+    const watched = eps.filter(e => e.watched).length;
+    return `Episodes · ${watched}/${eps.length} watched`;
+}
+
+function renderSeriesEpisodesBlock(item) {
+    const eps = sortEpisodesList(getEpisodesArray(item));
+    const groups = groupEpisodesBySeason(eps);
+    let seasonsHtml = '';
+    if (groups.length > 0) {
+        seasonsHtml = groups
+            .map(({ season, episodes: seasonEps }) => {
+                const { watched, total } = seasonWatchProgress(seasonEps);
+                const epRows = seasonEps
+                    .map(ep => {
+                        const t = ep.title
+                            ? `<span class="episode-title">${escapeHtml(ep.title)}</span>`
+                            : '';
+                        return `
+            <li class="episode-row ${ep.watched ? '' : 'episode-row--unwatched'}" data-season="${ep.season}" data-episode="${ep.episode}">
+                <label class="episode-watched-label">
+                    <input type="checkbox" class="episode-watched-cb" data-item-id="${item.id}" data-season="${ep.season}" data-episode="${ep.episode}" ${ep.watched ? 'checked' : ''}>
+                    <span class="episode-se-label">E${ep.episode}</span>
+                </label>
+                ${t}
+                <button type="button" class="episode-remove-btn" data-item-id="${item.id}" data-season="${ep.season}" data-episode="${ep.episode}" title="Remove">×</button>
+            </li>`;
+                    })
+                    .join('');
+                return `
+        <div class="episode-season-wrap">
+            <div class="episode-season-header-row">
+                <details class="episode-season-details" data-season="${season}">
+                    <summary class="episode-season-summary">
+                        <span class="episode-season-summary-chev" aria-hidden="true">▸</span>
+                        <span class="episode-season-title">Season ${season}</span>
+                        <span class="episode-season-progress" data-season="${season}">${watched}/${total}</span>
+                    </summary>
+                    <ul class="episode-list episode-list--nested">${epRows}</ul>
+                </details>
+                <label class="episode-season-all-label" title="Mark whole season watched">
+                    <input type="checkbox" class="season-watched-cb" data-item-id="${item.id}" data-season="${season}" aria-label="Mark entire season ${season} watched">
+                </label>
+            </div>
+        </div>`;
+            })
+            .join('');
+    }
+    const tmdbReady = serverHasTmdbKey || !!tmdbApiKey;
+    const emptyHint = tmdbReady
+        ? '<div class="episode-list-empty episode-list-hint">Nothing logged yet. <strong>Season 1</strong> titles from TMDB fill in automatically when the app can match this series (refresh or use Bulk fetch if needed). You can still add S/E below.</div>'
+        : '<div class="episode-list-empty episode-list-hint">Automatic episode lists use <strong>TMDB</strong>, not IMDB-only data. Set <code>TMDB_API_KEY</code> in the server <code>.env</code> or add a TMDB key in Settings, then reload.</div>';
+    const listContent = seasonsHtml || emptyHint;
+    return `
+        <details class="card-episodes">
+            <summary class="card-episodes-summary"><span class="card-episodes-summary-text">${escapeHtml(episodeSummaryText(item))}</span></summary>
+            <div class="card-episodes-inner">
+                <div class="episode-seasons">${listContent}</div>
+                <div class="episode-add-row">
+                    <input type="number" class="ep-add-season" min="1" step="1" placeholder="S" aria-label="Season" title="Season">
+                    <span class="episode-add-x">×</span>
+                    <input type="number" class="ep-add-episode" min="1" step="1" placeholder="E" aria-label="Episode" title="Episode">
+                    <input type="text" class="ep-add-title" placeholder="Title (optional)" aria-label="Episode title">
+                    <label class="ep-add-watched-label"><input type="checkbox" class="ep-add-watched"> Watched</label>
+                    <button type="button" class="episode-add-submit-btn btn-episode-add" data-item-id="${item.id}">Add</button>
+                </div>
+            </div>
+        </details>
+    `;
+}
+
+function updateCardEpisodeSummary(itemId) {
+    const item = watchlist.find(i => i.id === itemId);
+    const card = document.querySelector(`.card[data-id="${itemId}"]`);
+    if (!item || !card) return;
+    const el = card.querySelector('.card-episodes-summary-text');
+    if (el) el.textContent = episodeSummaryText(item);
+}
+
+function addOrUpdateEpisode(itemId, season, episode, title, watched) {
+    const item = watchlist.find(i => i.id === itemId);
+    if (!item || item.type !== 'series') return false;
+    if (!Array.isArray(item.episodes)) item.episodes = [];
+    const s = Math.max(1, parseInt(season, 10));
+    const e = Math.max(1, parseInt(episode, 10));
+    if (!Number.isFinite(s) || !Number.isFinite(e)) return false;
+    const existing = item.episodes.find(x => x.season === s && x.episode === e);
+    if (existing) {
+        existing.title = title != null ? String(title).trim() : existing.title;
+        existing.watched = !!watched;
+    } else {
+        item.episodes.push({
+            season: s,
+            episode: e,
+            title: title != null ? String(title).trim() : '',
+            watched: !!watched
+        });
+    }
+    return true;
+}
+
+function removeEpisode(itemId, season, episode) {
+    const item = watchlist.find(i => i.id === itemId);
+    if (!item || !Array.isArray(item.episodes)) return;
+    const s = parseInt(season, 10);
+    const ep = parseInt(episode, 10);
+    item.episodes = item.episodes.filter(x => !(x.season === s && x.episode === ep));
+}
+
+function handleEpisodeGridChange(e) {
+    const seasonCb = e.target.closest('.season-watched-cb');
+    if (seasonCb) {
+        const itemId = seasonCb.dataset.itemId;
+        const season = parseInt(seasonCb.dataset.season, 10);
+        const item = watchlist.find(i => i.id === itemId);
+        if (!item || item.type !== 'series' || !Array.isArray(item.episodes)) return;
+        if (!Number.isFinite(season)) return;
+        if (!item.episodes.some(ep => ep.season === season)) return;
+        const want = seasonCb.checked;
+        seasonCb.indeterminate = false;
+        for (const ep of item.episodes) {
+            if (ep.season === season) ep.watched = want;
+        }
+        saveWatchlist();
+        refreshSeriesEpisodesUI(itemId);
+        updateStats();
+        return;
+    }
+
+    const cb = e.target.closest('.episode-watched-cb');
+    if (!cb) return;
+    const itemId = cb.dataset.itemId;
+    const season = parseInt(cb.dataset.season, 10);
+    const episode = parseInt(cb.dataset.episode, 10);
+    const item = watchlist.find(i => i.id === itemId);
+    if (!item || item.type !== 'series') return;
+    const ep = item.episodes?.find(x => x.season === season && x.episode === episode);
+    if (ep) {
+        ep.watched = cb.checked;
+        saveWatchlist();
+        const row = cb.closest('.episode-row');
+        if (row) row.classList.toggle('episode-row--unwatched', !cb.checked);
+        const card = cb.closest('.card');
+        if (card) syncSeasonCheckboxInCard(card, item, season);
+        updateCardEpisodeSummary(itemId);
+    }
+}
+
+function handleEpisodeGridClick(e) {
+    const addBtn = e.target.closest('.episode-add-submit-btn');
+    if (addBtn) {
+        e.preventDefault();
+        const itemId = addBtn.dataset.itemId;
+        const card = addBtn.closest('.card');
+        if (!card) return;
+        const sIn = card.querySelector('.ep-add-season');
+        const eIn = card.querySelector('.ep-add-episode');
+        const tIn = card.querySelector('.ep-add-title');
+        const wIn = card.querySelector('.ep-add-watched');
+        const season = parseInt(sIn?.value, 10);
+        const episode = parseInt(eIn?.value, 10);
+        if (!Number.isFinite(season) || !Number.isFinite(episode)) {
+            showToast('Enter a valid season and episode number', 'error');
+            return;
+        }
+        const ok = addOrUpdateEpisode(itemId, season, episode, tIn?.value || '', !!wIn?.checked);
+        if (ok) {
+            saveWatchlist();
+            renderWatchlist();
+            updateStats();
+        }
+        return;
+    }
+    const rm = e.target.closest('.episode-remove-btn');
+    if (rm) {
+        e.preventDefault();
+        removeEpisode(rm.dataset.itemId, rm.dataset.season, rm.dataset.episode);
+        saveWatchlist();
+        renderWatchlist();
+        updateStats();
+    }
 }
 
 function saveWatchlist() {
@@ -573,15 +902,27 @@ function renderWatchlist() {
     
     emptyState.classList.remove('visible');
     watchlistGrid.innerHTML = filtered.map(item => createCard(item)).join('');
+    hydrateSeasonWatchCheckboxes();
 }
 
 function filterWatchlist() {
     return watchlist.filter(item => {
+        const epSearch =
+            !!searchQuery &&
+            item.type === 'series' &&
+            Array.isArray(item.episodes) &&
+            item.episodes.some(
+                ep =>
+                    (ep.title && ep.title.toLowerCase().includes(searchQuery)) ||
+                    `s${ep.season}e${ep.episode}`.includes(searchQuery.replace(/\s/g, ''))
+            );
         // Search filter
-        const matchesSearch = !searchQuery || 
+        const matchesSearch =
+            !searchQuery ||
             item.title.toLowerCase().includes(searchQuery) ||
             (item.genre && item.genre.toLowerCase().includes(searchQuery)) ||
-            (item.notes && item.notes.toLowerCase().includes(searchQuery));
+            (item.notes && item.notes.toLowerCase().includes(searchQuery)) ||
+            epSearch;
         
         // Category filter
         let matchesFilter = true;
@@ -642,6 +983,7 @@ function createCard(item) {
                     </div>
                 ` : ''}
                 ${item.notes ? `<p class="card-notes">${escapeHtml(item.notes)}</p>` : ''}
+                ${item.type === 'series' ? renderSeriesEpisodesBlock(item) : ''}
                 <div class="card-links">
                     ${links.map(link => `
                         <a href="${link.url}" target="_blank" rel="noopener noreferrer" 
@@ -727,14 +1069,31 @@ function openModal(id = null) {
         document.getElementById('rottenTomatoesLink').value = item.rottenTomatoesLink || '';
         document.getElementById('justWatchLink').value = item.justWatchLink || '';
         document.getElementById('notes').value = item.notes || '';
+        const tmdbTvEl = document.getElementById('tmdbTvIdField');
+        if (tmdbTvEl) {
+            tmdbTvEl.value =
+                item.type === 'series' && item.tmdbTvId != null
+                    ? String(item.tmdbTvId)
+                    : '';
+        }
     } else {
         modalTitle.textContent = 'Add New Title';
         watchlistForm.reset();
         document.getElementById('editId').value = '';
+        const tmdbTvEl = document.getElementById('tmdbTvIdField');
+        if (tmdbTvEl) tmdbTvEl.value = '';
     }
     
     modalOverlay.classList.add('active');
+    updateSeriesFormHint();
     document.getElementById('title').focus();
+}
+
+function updateSeriesFormHint() {
+    const hint = document.getElementById('seriesEpisodesFormHint');
+    const typeEl = document.getElementById('type');
+    if (!hint || !typeEl) return;
+    hint.hidden = typeEl.value !== 'series';
 }
 
 function closeModal() {
@@ -762,24 +1121,45 @@ function handleFormSubmit(e) {
         justWatchLink: document.getElementById('justWatchLink').value.trim(),
         notes: document.getElementById('notes').value.trim()
     };
+
+    const tmdbTvIdRaw = document.getElementById('tmdbTvIdField')?.value?.trim() || '';
+    const tmdbTvIdParsed = parseInt(tmdbTvIdRaw, 10);
+    const tmdbTvId =
+        formData.type === 'series' && Number.isFinite(tmdbTvIdParsed) && tmdbTvIdParsed > 0
+            ? tmdbTvIdParsed
+            : null;
     
     const editId = document.getElementById('editId').value;
     
     if (editId) {
-        // Update existing
         const index = watchlist.findIndex(i => i.id === editId);
         if (index !== -1) {
-            watchlist[index] = { ...watchlist[index], ...formData };
+            const prev = watchlist[index];
+            const keptEpisodes =
+                formData.type === 'series' && Array.isArray(prev.episodes) ? prev.episodes : [];
+            watchlist[index] = { ...prev, ...formData };
+            if (formData.type === 'series') {
+                watchlist[index].episodes = keptEpisodes;
+                if (tmdbTvId != null) watchlist[index].tmdbTvId = tmdbTvId;
+                else delete watchlist[index].tmdbTvId;
+            } else {
+                delete watchlist[index].episodes;
+            }
+            normalizeItemEpisodes(watchlist[index]);
             showToast('Title updated successfully!', 'success');
         }
     } else {
-        // Add new
         const newItem = {
             id: generateId(),
             ...formData,
             dateAdded: new Date().toISOString()
         };
+        if (formData.type === 'series') {
+            newItem.episodes = [];
+            if (tmdbTvId != null) newItem.tmdbTvId = tmdbTvId;
+        }
         watchlist.unshift(newItem);
+        normalizeItemEpisodes(newItem);
         showToast('Title added to your watchlist!', 'success');
     }
     
@@ -973,12 +1353,25 @@ function transformLetterboxd(data) {
         const rating = row.rating ? parseFloat(row.rating) * 2 : null; // Letterboxd uses 0-5, we use 0-10
         const letterboxdUri = row['letterboxd uri'] || row.uri || '';
         const watchedDate = row['watched date'] || row.date || '';
-        
+        const contentKind = (
+            row['object type'] ||
+            row.objecttype ||
+            row['media type'] ||
+            row.type ||
+            ''
+        )
+            .toString()
+            .toLowerCase();
+        let lbType = 'movie';
+        if (contentKind.includes('tv') || contentKind.includes('series') || contentKind.includes('episode')) {
+            lbType = 'series';
+        }
+
         return {
             id: generateId(),
             title: title,
             year: year,
-            type: 'movie',
+            type: lbType,
             status: defaultStatus, // Will be overridden by user selection if not auto
             genre: '',
             myRating: rating,
@@ -988,7 +1381,8 @@ function transformLetterboxd(data) {
             rottenTomatoesLink: '',
             justWatchLink: '',
             notes: watchedDate ? `Watched: ${watchedDate}` : '',
-            dateAdded: new Date().toISOString()
+            dateAdded: new Date().toISOString(),
+            ...(lbType === 'series' ? { episodes: [] } : {})
         };
     }).filter(item => item.title);
 }
@@ -1035,7 +1429,8 @@ function transformIMDB(data) {
             rottenTomatoesLink: '',
             justWatchLink: '',
             notes: '',
-            dateAdded: new Date().toISOString()
+            dateAdded: new Date().toISOString(),
+            ...(type === 'series' ? { episodes: [] } : {})
         };
     }).filter(item => item.title);
 }
@@ -1069,7 +1464,8 @@ function transformCustomCSV(data) {
             rottenTomatoesLink: row.rotten_tomatoes || row.rt_link || '',
             justWatchLink: row.justwatch || row.justwatch_link || '',
             notes: row.notes || row.comments || row.review || '',
-            dateAdded: new Date().toISOString()
+            dateAdded: new Date().toISOString(),
+            ...(type === 'series' ? { episodes: [] } : {})
         };
     }).filter(item => item.title);
 }
@@ -1115,8 +1511,10 @@ function parseTitleAndYearFromPaste(rawLine) {
 
 function guessTypeFromPasteLine(line) {
     const s = line.toLowerCase();
-    if (/\b(tv series|miniseries|limited series|anthology series)\b/.test(s)) return 'series';
+    if (/\b(tv series|miniseries|limited series|anthology series|television series)\b/.test(s)) return 'series';
     if (/\(\s*tv(\s+series|\s+show)?\s*\)/.test(s)) return 'series';
+    if (/\b(s\d{1,2}\s*e\d{1,2}|season\s*\d+)\b/.test(s)) return 'series';
+    if (/\b(k-drama|kdrama|anime|soap opera|sitcom)\b/.test(s)) return 'series';
     return 'movie';
 }
 
@@ -1138,11 +1536,12 @@ function titlesFromPasteText(text) {
     for (const seg of segments) {
         const parsed = parseTitleAndYearFromPaste(seg);
         if (!parsed) continue;
+        const pstType = guessTypeFromPasteLine(seg);
         items.push({
             id: generateId(),
             title: parsed.title,
             year: parsed.year,
-            type: guessTypeFromPasteLine(seg),
+            type: pstType,
             status: 'want-to-watch',
             genre: '',
             myRating: null,
@@ -1152,7 +1551,8 @@ function titlesFromPasteText(text) {
             rottenTomatoesLink: '',
             justWatchLink: '',
             notes: '',
-            dateAdded: new Date().toISOString()
+            dateAdded: new Date().toISOString(),
+            ...(pstType === 'series' ? { episodes: [] } : {})
         });
     }
     return items;
@@ -1252,6 +1652,7 @@ async function executeImport() {
         imported++;
     });
 
+    normalizeWatchlistEpisodes();
     saveWatchlist();
     renderWatchlist();
     updateStats();
@@ -1444,24 +1845,71 @@ function importBackupFromJsonFile(file) {
                 showToast('No titles found in file', 'error');
                 return;
             }
-            const merged = valid.map((it) => ({
-                id: it.id || generateId(),
-                title: it.title.trim(),
-                year: it.year != null ? parseInt(it.year, 10) || null : null,
-                type: it.type === 'series' ? 'series' : 'movie',
-                status: it.status || 'want-to-watch',
-                genre: it.genre || '',
-                myRating: it.myRating != null ? parseFloat(it.myRating) : null,
-                imdbRating: it.imdbRating != null ? parseFloat(it.imdbRating) : null,
-                rtRating: it.rtRating != null ? parseInt(it.rtRating, 10) : null,
-                posterUrl: it.posterUrl || '',
-                imdbLink: it.imdbLink || '',
-                letterboxdLink: it.letterboxdLink || '',
-                rottenTomatoesLink: it.rottenTomatoesLink || '',
-                justWatchLink: it.justWatchLink || '',
-                notes: it.notes || '',
-                dateAdded: it.dateAdded || new Date().toISOString()
-            }));
+            const merged = valid.map((it) => {
+                const typ = it.type === 'series' ? 'series' : 'movie';
+                const row = {
+                    id: it.id || generateId(),
+                    title: it.title.trim(),
+                    year: it.year != null ? parseInt(it.year, 10) || null : null,
+                    type: typ,
+                    status: it.status || 'want-to-watch',
+                    genre: it.genre || '',
+                    myRating: it.myRating != null ? parseFloat(it.myRating) : null,
+                    imdbRating: it.imdbRating != null ? parseFloat(it.imdbRating) : null,
+                    rtRating: it.rtRating != null ? parseInt(it.rtRating, 10) : null,
+                    posterUrl: it.posterUrl || '',
+                    imdbLink: it.imdbLink || '',
+                    letterboxdLink: it.letterboxdLink || '',
+                    rottenTomatoesLink: it.rottenTomatoesLink || '',
+                    justWatchLink: it.justWatchLink || '',
+                    notes: it.notes || '',
+                    dateAdded: it.dateAdded || new Date().toISOString()
+                };
+                if (typ === 'series') {
+                    row.episodes = Array.isArray(it.episodes)
+                        ? it.episodes
+                              .filter(
+                                  (ep) =>
+                                      ep &&
+                                      Number.isFinite(Number(ep.season)) &&
+                                      Number.isFinite(Number(ep.episode))
+                              )
+                              .map((ep) => ({
+                                  season: Math.max(1, parseInt(ep.season, 10)),
+                                  episode: Math.max(1, parseInt(ep.episode, 10)),
+                                  title: typeof ep.title === 'string' ? ep.title : '',
+                                  watched: !!ep.watched
+                              }))
+                        : [];
+                    if (it.tmdbTvId != null) {
+                        const tid = parseInt(it.tmdbTvId, 10);
+                        if (Number.isFinite(tid) && tid > 0) row.tmdbTvId = tid;
+                    }
+                    if (
+                        it.tmdbSeason1Guide &&
+                        typeof it.tmdbSeason1Guide === 'object' &&
+                        Array.isArray(it.tmdbSeason1Guide.episodes)
+                    ) {
+                        const gTv =
+                            it.tmdbSeason1Guide.tmdbTvId != null
+                                ? parseInt(it.tmdbSeason1Guide.tmdbTvId, 10)
+                                : NaN;
+                        row.tmdbSeason1Guide = {
+                            fetchedAt:
+                                typeof it.tmdbSeason1Guide.fetchedAt === 'string'
+                                    ? it.tmdbSeason1Guide.fetchedAt
+                                    : new Date().toISOString(),
+                            tmdbTvId: Number.isFinite(gTv)
+                                ? gTv
+                                : row.tmdbTvId != null
+                                  ? row.tmdbTvId
+                                  : null,
+                            episodes: it.tmdbSeason1Guide.episodes
+                        };
+                    }
+                }
+                return row;
+            });
 
             const merge = confirm(
                 `Import ${merged.length} titles and MERGE with what you have? OK = merge, Cancel = replace entire list`
@@ -1484,10 +1932,12 @@ function importBackupFromJsonFile(file) {
                 watchlist = merged;
                 showToast(`Replaced list with ${merged.length} titles`, 'success');
             }
+            normalizeWatchlistEpisodes();
             saveWatchlist();
             if (hasCloudSync) pushWatchlistToCloud();
             renderWatchlist();
             updateStats();
+            void hydrateTmdbSeason1Guides();
             closeSettingsModal();
         } catch (err) {
             showToast('Invalid JSON file', 'error');
@@ -1557,12 +2007,22 @@ async function searchTMDB(title, year = null) {
     }
 }
 
+function isTmdbDetailsPayload(data) {
+    return (
+        data &&
+        typeof data === 'object' &&
+        !data.status_code &&
+        (data.id != null || data.title || data.name)
+    );
+}
+
 async function getTMDBDetails(id, mediaType) {
     // Use server API if available
     if (serverHasTmdbKey) {
         try {
             const response = await fetch(`/api/tmdb/${mediaType}/${id}`);
             const data = await response.json();
+            if (!response.ok || !isTmdbDetailsPayload(data)) return null;
             return data;
         } catch (error) {
             console.error('TMDB details error:', error);
@@ -1575,6 +2035,7 @@ async function getTMDBDetails(id, mediaType) {
     try {
         const response = await fetch(`${TMDB_BASE_URL}/${mediaType}/${id}?api_key=${tmdbApiKey}&append_to_response=external_ids,credits`);
         const data = await response.json();
+        if (!response.ok || !isTmdbDetailsPayload(data)) return null;
         return data;
     } catch (error) {
         console.error('TMDB details error:', error);
@@ -1585,6 +2046,190 @@ async function getTMDBDetails(id, mediaType) {
 function getTMDBPosterUrl(posterPath, size = 'w500') {
     if (!posterPath) return '';
     return `${TMDB_IMAGE_BASE}${size}${posterPath}`;
+}
+
+async function fetchTMDBTvSeason(tvId, seasonNumber) {
+    const id = parseInt(tvId, 10);
+    const sn = parseInt(seasonNumber, 10);
+    if (!Number.isFinite(id) || id < 1 || !Number.isFinite(sn) || sn < 1) return null;
+
+    if (serverHasTmdbKey) {
+        try {
+            const response = await fetch(`/api/tmdb/tv/${id}/season/${sn}`);
+            if (!response.ok) return null;
+            return response.json();
+        } catch (e) {
+            console.warn('TMDB season fetch', e);
+            return null;
+        }
+    }
+
+    if (!tmdbApiKey) return null;
+    try {
+        const response = await fetch(
+            `${TMDB_BASE_URL}/tv/${id}/season/${sn}?api_key=${tmdbApiKey}`
+        );
+        if (!response.ok) return null;
+        return response.json();
+    } catch (e) {
+        console.warn('TMDB season fetch', e);
+        return null;
+    }
+}
+
+function hasCachedSeason1Guide(item) {
+    return !!(
+        item.tmdbSeason1Guide &&
+        item.tmdbSeason1Guide.fetchedAt &&
+        Array.isArray(item.tmdbSeason1Guide.episodes)
+    );
+}
+
+function mergeSeason1GuideIntoItem(item, tvId, data) {
+    const eps = Array.isArray(data.episodes) ? data.episodes : [];
+    const slim = eps.map(ep => ({
+        episode_number: parseInt(ep.episode_number, 10),
+        name: typeof ep.name === 'string' ? ep.name : '',
+        air_date: typeof ep.air_date === 'string' ? ep.air_date : '',
+        runtime: ep.runtime != null ? ep.runtime : null
+    })).filter(ep => Number.isFinite(ep.episode_number) && ep.episode_number >= 1);
+
+    item.tmdbSeason1Guide = {
+        fetchedAt: new Date().toISOString(),
+        tmdbTvId: tvId,
+        episodes: slim
+    };
+
+    if (!Array.isArray(item.episodes)) item.episodes = [];
+    const existing = new Set(item.episodes.map(e => `${e.season}-${e.episode}`));
+    for (const ep of slim) {
+        const key = `1-${ep.episode_number}`;
+        if (!existing.has(key)) {
+            item.episodes.push({
+                season: 1,
+                episode: ep.episode_number,
+                title: ep.name || '',
+                watched: false
+            });
+            existing.add(key);
+        }
+    }
+    return true;
+}
+
+async function searchTMDBTv(title, year = null) {
+    const q = typeof title === 'string' ? title.trim() : '';
+    if (!q) return [];
+
+    if (serverHasTmdbKey) {
+        try {
+            let url = `/api/tmdb/search/tv?query=${encodeURIComponent(q)}`;
+            if (year != null && year !== '') {
+                const y = parseInt(year, 10);
+                if (Number.isFinite(y)) url += `&year=${y}`;
+            }
+            const response = await fetch(url);
+            const data = await response.json();
+            if (data.results && Array.isArray(data.results)) return data.results;
+            return [];
+        } catch (e) {
+            console.error('TMDB TV search error:', e);
+            return [];
+        }
+    }
+
+    if (!tmdbApiKey) return [];
+    let url = `${TMDB_BASE_URL}/search/tv?api_key=${tmdbApiKey}&query=${encodeURIComponent(q)}`;
+    if (year != null && year !== '') {
+        const y = parseInt(year, 10);
+        if (Number.isFinite(y) && y >= 1900 && y <= 2100) {
+            url += `&first_air_date_year=${y}`;
+        }
+    }
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.results && Array.isArray(data.results)) return data.results;
+        return [];
+    } catch (e) {
+        console.error('TMDB TV search error:', e);
+        return [];
+    }
+}
+
+async function resolveTmdbTvIdForSeries(item) {
+    const results = await searchTMDBTv(item.title, item.year);
+    const first = results[0];
+    return first && first.id ? first.id : null;
+}
+
+async function hydrateTmdbSeason1Guides() {
+    if (season1HydrateRunning) return;
+    if (!(serverHasTmdbKey || tmdbApiKey)) return;
+
+    season1HydrateRunning = true;
+    let changed = false;
+    let fetchCount = 0;
+    let resolveAttempts = 0;
+
+    try {
+        const needGuide = watchlist.filter(
+            item =>
+                item.type === 'series' &&
+                !hasCachedSeason1Guide(item) &&
+                item.tmdbTvId != null &&
+                Number.isFinite(Number(item.tmdbTvId))
+        );
+
+        for (const item of needGuide) {
+            if (fetchCount >= TMDB_SEASON1_MAX_FETCHES) break;
+            const tvId = Number(item.tmdbTvId);
+            const data = await fetchTMDBTvSeason(tvId, 1);
+            fetchCount++;
+            if (data && Array.isArray(data.episodes)) {
+                mergeSeason1GuideIntoItem(item, tvId, data);
+                changed = true;
+            }
+            await new Promise(r => setTimeout(r, TMDB_SEASON1_DELAY_MS));
+        }
+
+        const needResolve = watchlist.filter(
+            item =>
+                item.type === 'series' &&
+                !hasCachedSeason1Guide(item) &&
+                (item.tmdbTvId == null || !Number.isFinite(Number(item.tmdbTvId)))
+        );
+
+        for (const item of needResolve) {
+            if (fetchCount >= TMDB_SEASON1_MAX_FETCHES) break;
+            if (resolveAttempts >= TMDB_SEASON1_MAX_RESOLVE_ATTEMPTS) break;
+            resolveAttempts++;
+            const tvId = await resolveTmdbTvIdForSeries(item);
+            if (!tvId) {
+                await new Promise(r => setTimeout(r, TMDB_SEASON1_DELAY_MS));
+                continue;
+            }
+            item.tmdbTvId = tvId;
+            changed = true;
+            const data = await fetchTMDBTvSeason(tvId, 1);
+            fetchCount++;
+            if (data && Array.isArray(data.episodes)) {
+                mergeSeason1GuideIntoItem(item, tvId, data);
+                changed = true;
+            }
+            await new Promise(r => setTimeout(r, TMDB_SEASON1_DELAY_MS));
+        }
+
+        if (changed) {
+            normalizeWatchlistEpisodes();
+            saveWatchlist();
+            renderWatchlist();
+        }
+    } catch (e) {
+        console.warn('Season 1 hydrate', e);
+    } finally {
+        season1HydrateRunning = false;
+    }
 }
 
 // ============================================
@@ -1821,8 +2466,10 @@ async function selectSearchResult(id, source, mediaType) {
     let title = '', year = '', type = 'movie', genre = '', posterUrl = '', imdbId = '', imdbRating = null, rtRating = null, plot = '', runtime = '', director = '';
     
     if (source === 'tmdb') {
-        // Fetch from TMDB
-        const tmdbDetails = await getTMDBDetails(id, mediaType === 'series' ? 'tv' : 'movie');
+        // Search stores TMDB's media_type ("tv" | "movie"), not our form's "series"
+        const tmdbMedia =
+            mediaType === 'tv' || mediaType === 'series' ? 'tv' : 'movie';
+        const tmdbDetails = await getTMDBDetails(id, tmdbMedia);
         
         if (tmdbDetails) {
             title = tmdbDetails.title || tmdbDetails.name || '';
@@ -1920,6 +2567,11 @@ async function selectSearchResult(id, source, mediaType) {
     document.getElementById('genre').value = genre;
     document.getElementById('posterUrl').value = posterUrl;
     document.getElementById('imdbLink').value = imdbId ? `https://www.imdb.com/title/${imdbId}/` : '';
+    const tmdbTvEl = document.getElementById('tmdbTvIdField');
+    if (tmdbTvEl) {
+        tmdbTvEl.value =
+            source === 'tmdb' && type === 'series' && id ? String(id) : '';
+    }
     
     if (imdbRating) {
         document.getElementById('imdbRating').value = imdbRating;
@@ -1993,6 +2645,19 @@ async function bulkFetchDetails(options = {}) {
                     if (p.imdbLink) w.imdbLink = p.imdbLink;
                     if (p.genre) w.genre = p.genre;
                     if (p.rtRating != null && p.rtRating !== '') w.rtRating = p.rtRating;
+                    if (p.type === 'movie' || p.type === 'series') w.type = p.type;
+                    if (p.type === 'movie') {
+                        delete w.tmdbTvId;
+                        delete w.tmdbSeason1Guide;
+                    }
+                    if (
+                        w.type === 'series' &&
+                        p.tmdbTvId != null &&
+                        p.tmdbTvId !== ''
+                    ) {
+                        const tid = parseInt(p.tmdbTvId, 10);
+                        if (Number.isFinite(tid) && tid > 0) w.tmdbTvId = tid;
+                    }
                 }
                 updated += j.updated || 0;
                 failed += j.failed || 0;
@@ -2010,6 +2675,7 @@ async function bulkFetchDetails(options = {}) {
     if (tryServerBatch && batchCompletedOk) {
         saveWatchlist();
         renderWatchlist();
+        await hydrateTmdbSeason1Guides();
         if (progressDiv) progressDiv.style.display = 'none';
         if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;
         let message = `Updated ${updated} items with posters/ratings`;
@@ -2048,40 +2714,82 @@ async function bulkFetchDetails(options = {}) {
         if (index === -1) continue;
 
         let foundData = false;
+        let hadTmdbMatch = false;
 
-        if ((serverHasTmdbKey || tmdbApiKey) && !watchlist[index].posterUrl) {
+        if (serverHasTmdbKey || tmdbApiKey) {
             const tmdbResults = await searchTMDB(item.title, item.year);
             if (tmdbResults && tmdbResults.length > 0) {
+                hadTmdbMatch = true;
                 const match = tmdbResults[0];
-                if (match.poster_path) {
-                    watchlist[index].posterUrl = getTMDBPosterUrl(match.poster_path, 'w500');
+                const inferred = match.media_type === 'tv' ? 'series' : 'movie';
+                if (watchlist[index].type !== inferred) {
+                    watchlist[index].type = inferred;
                     foundData = true;
                 }
+                if (match.media_type === 'tv' && match.id) {
+                    const mid = parseInt(match.id, 10);
+                    if (Number.isFinite(mid) && mid > 0 && watchlist[index].tmdbTvId !== mid) {
+                        watchlist[index].tmdbTvId = mid;
+                        foundData = true;
+                    }
+                }
                 const mediaType = match.media_type === 'tv' ? 'tv' : 'movie';
-                const tmdbDetails = await getTMDBDetails(match.id, mediaType);
-                if (tmdbDetails) {
-                    if (!watchlist[index].genre && tmdbDetails.genres) {
-                        watchlist[index].genre = tmdbDetails.genres.map(g => g.name).join(', ');
+                const needDetails =
+                    !watchlist[index].posterUrl ||
+                    !watchlist[index].genre ||
+                    !watchlist[index].imdbLink;
+                if (needDetails) {
+                    const tmdbDetails = await getTMDBDetails(match.id, mediaType);
+                    if (tmdbDetails) {
+                        if (!watchlist[index].posterUrl && tmdbDetails.poster_path) {
+                            watchlist[index].posterUrl = getTMDBPosterUrl(tmdbDetails.poster_path, 'w500');
+                            foundData = true;
+                        }
+                        if (!watchlist[index].genre && tmdbDetails.genres) {
+                            watchlist[index].genre = tmdbDetails.genres.map(g => g.name).join(', ');
+                            foundData = true;
+                        }
+                        if (!watchlist[index].imdbLink && tmdbDetails.external_ids?.imdb_id) {
+                            watchlist[index].imdbLink = `https://www.imdb.com/title/${tmdbDetails.external_ids.imdb_id}/`;
+                            foundData = true;
+                        }
                     }
-                    if (tmdbDetails.external_ids?.imdb_id) {
-                        watchlist[index].imdbLink = `https://www.imdb.com/title/${tmdbDetails.external_ids.imdb_id}/`;
-                    }
+                } else if (!watchlist[index].posterUrl && match.poster_path) {
+                    watchlist[index].posterUrl = getTMDBPosterUrl(match.poster_path, 'w500');
+                    foundData = true;
                 }
             }
         }
 
-        if ((serverHasOmdbKey || omdbApiKey) && !watchlist[index].imdbRating) {
+        const canOmdb = serverHasOmdbKey || omdbApiKey;
+        if (canOmdb && (!watchlist[index].imdbRating || !hadTmdbMatch)) {
             const omdbDetails = await getOMDBByTitle(item.title, item.year);
-            if (omdbDetails) {
-                if (omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {
+            if (omdbDetails && omdbDetails.Response === 'True') {
+                if (!hadTmdbMatch) {
+                    const t = (omdbDetails.Type || '').toLowerCase();
+                    if (t === 'series' || t === 'episode') {
+                        if (watchlist[index].type !== 'series') {
+                            watchlist[index].type = 'series';
+                            foundData = true;
+                        }
+                    } else if (t === 'movie') {
+                        if (watchlist[index].type !== 'movie') {
+                            watchlist[index].type = 'movie';
+                            foundData = true;
+                        }
+                    }
+                }
+                if (!watchlist[index].imdbRating && omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {
                     watchlist[index].imdbRating = parseFloat(omdbDetails.imdbRating);
                     foundData = true;
                 }
                 if (!watchlist[index].imdbLink && omdbDetails.imdbID) {
                     watchlist[index].imdbLink = `https://www.imdb.com/title/${omdbDetails.imdbID}/`;
+                    foundData = true;
                 }
                 if (!watchlist[index].genre && omdbDetails.Genre) {
                     watchlist[index].genre = omdbDetails.Genre;
+                    foundData = true;
                 }
                 if (omdbDetails.Ratings) {
                     const rtRating = omdbDetails.Ratings.find(r => r.Source === 'Rotten Tomatoes');
@@ -2107,6 +2815,7 @@ async function bulkFetchDetails(options = {}) {
     
     saveWatchlist();
     renderWatchlist();
+    await hydrateTmdbSeason1Guides();
 
     if (progressDiv) progressDiv.style.display = 'none';
     if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;

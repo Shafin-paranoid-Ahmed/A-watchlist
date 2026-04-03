@@ -18,7 +18,7 @@ async function fetchJson(url) {
 
 async function enrichFromTmdb(item, apiKey) {
     const patch = {};
-    if (!apiKey || item.posterUrl) return patch;
+    if (!apiKey) return patch;
 
     let url = `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(item.title)}`;
     if (item.year) url += `&year=${item.year}`;
@@ -29,18 +29,30 @@ async function enrichFromTmdb(item, apiKey) {
     const match = results[0];
     if (!match) return patch;
 
-    if (match.poster_path) patch.posterUrl = tmdbPoster(match.poster_path);
+    patch.type = match.media_type === 'tv' ? 'series' : 'movie';
+    if (match.media_type === 'tv') {
+        patch.tmdbTvId = match.id;
+    }
 
     const mediaType = match.media_type === 'tv' ? 'tv' : 'movie';
-    const dUrl = `https://api.themoviedb.org/3/${mediaType}/${match.id}?api_key=${apiKey}&append_to_response=external_ids,credits`;
-    const details = await fetchJson(dUrl);
+    const needDetails = !item.posterUrl || !item.genre || !item.imdbLink;
 
-    if (details.genres?.length && !item.genre) {
-        patch.genre = details.genres.map((g) => g.name).join(', ');
+    if (needDetails) {
+        const dUrl = `https://api.themoviedb.org/3/${mediaType}/${match.id}?api_key=${apiKey}&append_to_response=external_ids,credits`;
+        const details = await fetchJson(dUrl);
+        if (!item.posterUrl && details.poster_path) {
+            patch.posterUrl = tmdbPoster(details.poster_path);
+        }
+        if (!item.genre && details.genres?.length) {
+            patch.genre = details.genres.map((g) => g.name).join(', ');
+        }
+        if (!item.imdbLink && details.external_ids?.imdb_id) {
+            patch.imdbLink = `https://www.imdb.com/title/${details.external_ids.imdb_id}/`;
+        }
+    } else if (!item.posterUrl && match.poster_path) {
+        patch.posterUrl = tmdbPoster(match.poster_path);
     }
-    if (details.external_ids?.imdb_id) {
-        patch.imdbLink = `https://www.imdb.com/title/${details.external_ids.imdb_id}/`;
-    }
+
     return patch;
 }
 
@@ -52,6 +64,10 @@ async function enrichFromOmdb(item, apiKey) {
     if (item.year) url += `&y=${item.year}`;
     const o = await fetchJson(url);
     if (o.Response !== 'True') return patch;
+
+    const oType = (o.Type || '').toLowerCase();
+    if (oType === 'series' || oType === 'episode') patch.type = 'series';
+    else if (oType === 'movie') patch.type = 'movie';
 
     if (o.imdbRating && o.imdbRating !== 'N/A') {
         patch.imdbRating = parseFloat(o.imdbRating);
@@ -81,6 +97,9 @@ function combinePatches(item, tmdbPatch, omdbPatch) {
     else if (omdbPatch.genre) out.genre = omdbPatch.genre;
     if (tmdbPatch.imdbLink) out.imdbLink = tmdbPatch.imdbLink;
     else if (omdbPatch.imdbLink) out.imdbLink = omdbPatch.imdbLink;
+    if (tmdbPatch.type) out.type = tmdbPatch.type;
+    else if (omdbPatch.type) out.type = omdbPatch.type;
+    if (tmdbPatch.tmdbTvId != null) out.tmdbTvId = tmdbPatch.tmdbTvId;
     if (omdbPatch.imdbRating !== undefined) out.imdbRating = omdbPatch.imdbRating;
     if (omdbPatch.rtRating !== undefined) out.rtRating = omdbPatch.rtRating;
     return out;
@@ -102,6 +121,15 @@ function foundNewData(original, merged) {
     if (merged.rtRating != null && merged.rtRating !== '' && (original.rtRating == null || original.rtRating === '')) {
         return true;
     }
+    if (merged.type && (merged.type === 'movie' || merged.type === 'series')) {
+        const orig = original.type || 'movie';
+        if (merged.type !== orig) return true;
+    }
+    if (merged.tmdbTvId != null) {
+        const om = Number(original.tmdbTvId);
+        const mm = Number(merged.tmdbTvId);
+        if (!Number.isFinite(om) || om !== mm) return true;
+    }
     return false;
 }
 
@@ -110,11 +138,13 @@ async function enrichOneItem(item, tmdbKey, omdbKey) {
         id: item.id,
         title: String(item.title || '').trim(),
         year: item.year != null ? item.year : null,
+        type: item.type || 'movie',
         posterUrl: item.posterUrl || '',
         imdbRating: item.imdbRating,
         genre: item.genre || '',
         imdbLink: item.imdbLink || '',
-        rtRating: item.rtRating
+        rtRating: item.rtRating,
+        tmdbTvId: item.tmdbTvId != null ? item.tmdbTvId : null
     };
     if (!safe.title) {
         return { id: item.id, patch: { id: item.id }, found: false };

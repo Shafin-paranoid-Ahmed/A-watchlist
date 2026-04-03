@@ -657,6 +657,279 @@ body::before {
     overflow: hidden;
 }
 
+/* Series episode log (per card) */
+.card-episodes {
+    margin-top: var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    font-size: 0.82rem;
+}
+
+.card-episodes-summary {
+    cursor: pointer;
+    padding: var(--space-sm) var(--space-md);
+    color: var(--text-secondary);
+    font-weight: 500;
+    list-style: none;
+    display: flex;
+    align-items: center;
+}
+
+.card-episodes-summary::-webkit-details-marker {
+    display: none;
+}
+
+.card-episodes-summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: var(--space-sm);
+    transition: transform 0.15s ease;
+    color: var(--accent-purple);
+}
+
+.card-episodes[open] > .card-episodes-summary::before {
+    transform: rotate(90deg);
+}
+
+.card-episodes-inner {
+    padding: 0 var(--space-md) var(--space-md);
+    border-top: 1px solid var(--border-color);
+}
+
+.episode-seasons {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    margin-top: var(--space-sm);
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.episode-season-header-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary, rgba(0, 0, 0, 0.15));
+    padding: 2px var(--space-xs) 2px var(--space-sm);
+}
+
+.episode-season-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.episode-season-summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-xs) 0;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
+
+.episode-season-summary::-webkit-details-marker {
+    display: none;
+}
+
+.episode-season-summary-chev {
+    display: inline-block;
+    color: var(--accent-purple);
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+}
+
+.episode-season-details[open] > .episode-season-summary .episode-season-summary-chev {
+    transform: rotate(90deg);
+}
+
+.episode-season-title {
+    flex: 1;
+    min-width: 0;
+}
+
+.episode-season-progress {
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+}
+
+.episode-season-all-label {
+    display: flex;
+    align-items: center;
+    align-self: center;
+    padding: var(--space-xs);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.season-watched-cb {
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--accent-purple);
+}
+
+.episode-list {
+    list-style: none;
+    margin: 0;
+    padding: var(--space-sm) 0 0 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.episode-list.episode-list--nested {
+    max-height: none;
+    overflow: visible;
+    padding: var(--space-xs) 0 var(--space-sm) var(--space-md);
+    margin: 0;
+    border-top: 1px solid var(--border-color);
+}
+
+.episode-list-empty,
+.episode-list .episode-list-empty,
+.episode-seasons > .episode-list-empty {
+    color: var(--text-muted);
+    padding: var(--space-xs) 0;
+    font-style: italic;
+}
+
+.episode-list-hint {
+    font-style: normal;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    list-style: none;
+}
+
+.episode-list-hint code {
+    font-size: 0.85em;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: var(--bg-elevated, rgba(255, 255, 255, 0.06));
+}
+
+.episode-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+    padding: var(--space-xs) 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.episode-row:last-child {
+    border-bottom: none;
+}
+
+.episode-row--unwatched .episode-se-label {
+    opacity: 0.75;
+}
+
+.episode-watched-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    cursor: pointer;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.episode-watched-cb {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--accent-purple);
+}
+
+.episode-se-label {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 3.5rem;
+}
+
+.episode-title {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.episode-remove-btn {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0 var(--space-xs);
+    border-radius: var(--radius-sm);
+}
+
+.episode-remove-btn:hover {
+    color: var(--accent-red);
+    background: rgba(229, 9, 20, 0.1);
+}
+
+.episode-add-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px dashed var(--border-color);
+}
+
+.episode-add-row .ep-add-season,
+.episode-add-row .ep-add-episode {
+    width: 3.5rem;
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 0.85rem;
+}
+
+.episode-add-row .ep-add-title {
+    flex: 1;
+    min-width: 120px;
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 0.85rem;
+}
+
+.episode-add-x {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    user-select: none;
+}
+
+.ep-add-watched-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    margin: 0;
+}
+
+.btn-episode-add {
+    padding: var(--space-xs) var(--space-md);
+    font-size: 0.8rem;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--accent-purple);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.btn-episode-add:hover {
+    filter: brightness(1.08);
+}
+
 /* Empty State */
 .empty-state {
     display: none;
@@ -790,6 +1063,13 @@ form {
     color: var(--text-secondary);
     font-size: 0.875rem;
     font-weight: 500;
+}
+
+.field-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: var(--space-xs) 0 0 0;
+    line-height: 1.45;
 }
 
 .form-group input,

@@ -114,6 +114,7 @@
                 </div>
                 <form id="watchlistForm">
                     <input type="hidden" id="editId">
+                    <input type="hidden" id="tmdbTvIdField" value="">
                     
                     <div class="form-row">
                         <div class="form-group title-search-group">
@@ -143,6 +144,7 @@
                                 <option value="movie">Movie</option>
                                 <option value="series">Series</option>
                             </select>
+                            <p class="field-hint series-episodes-hint" id="seriesEpisodesFormHint" hidden>For series, open the card on your list to log seasons, episodes, and watched checkboxes.</p>
                         </div>
                         <div class="form-group">
                             <label for="status">Status *</label>
@@ -157,7 +159,24 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label for="genre">Genre</label>
-                            <input type="text" id="genre" placeholder="e.g., Sci-Fi, Action">
+                            <input type="text" id="genre" list="genrePresets" placeholder="Type or pick a preset (e.g. Games)">
+                            <p class="field-hint">Presets include <strong>Games</strong> for video games; you can still type any custom genre.</p>
+                            <datalist id="genrePresets">
+                                <option value="Games"></option>
+                                <option value="Action"></option>
+                                <option value="Adventure"></option>
+                                <option value="Animation"></option>
+                                <option value="Comedy"></option>
+                                <option value="Crime"></option>
+                                <option value="Documentary"></option>
+                                <option value="Drama"></option>
+                                <option value="Fantasy"></option>
+                                <option value="Horror"></option>
+                                <option value="Romance"></option>
+                                <option value="Sci-Fi"></option>
+                                <option value="Thriller"></option>
+                                <option value="Western"></option>
+                            </datalist>
                         </div>
                         <div class="form-group">
                             <label for="myRating">My Rating</label>
@@ -282,7 +301,7 @@
                                 <li><code>type</code> - "movie" or "series"</li>
                                 <li><code>rating</code> - Your rating (0-10)</li>
                                 <li><code>status</code> - "watched", "watching", or "want-to-watch"</li>
-                                <li><code>genre</code> or <code>genres</code> - Genre(s)</li>
+                                <li><code>genre</code> or <code>genres</code> - Genre(s); use <code>Games</code> for video games</li>
                             </ul>
                         </div>
 
