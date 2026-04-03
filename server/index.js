@@ -40,13 +40,14 @@ app.get('/api/omdb', async (req, res) => {
         return res.status(400).json({ error: 'OMDB API key not configured' });
     }
     
-    const { s, i, t, y } = req.query;
+    const { s, i, t, y, plot } = req.query;
     let url = `https://www.omdbapi.com/?apikey=${OMDB_API_KEY}`;
     
     if (s) url += `&s=${encodeURIComponent(s)}`;
     if (i) url += `&i=${encodeURIComponent(i)}`;
     if (t) url += `&t=${encodeURIComponent(t)}`;
     if (y) url += `&y=${encodeURIComponent(y)}`;
+    if (plot) url += `&plot=${encodeURIComponent(plot)}`;
     
     try {
         const response = await fetch(url);
@@ -170,6 +171,7 @@ app.post('/api/enrich-batch', async (req, res) => {
         genre: row.genre || '',
         imdbLink: row.imdbLink || '',
         rtRating: row.rtRating,
+        notes: row.notes != null ? String(row.notes) : '',
         tmdbTvId:
             row.tmdbTvId != null && Number.isFinite(Number(row.tmdbTvId)) ? Number(row.tmdbTvId) : null
     }));

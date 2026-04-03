@@ -16,30 +16,34 @@ async function fetchJson(url) {
     return r.json();
 }
 
+function extractImdbId(link) {
+    const m = String(link || '').match(/tt\d+/i);
+    return m ? m[0] : null;
+}
+
 async function enrichFromTmdb(item, apiKey) {
     const patch = {};
     if (!apiKey) return patch;
 
-    let url = `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(item.title)}`;
-    if (item.year) url += `&year=${item.year}`;
-    const data = await fetchJson(url);
-    const results = (data.results || []).filter(
-        (r) => r.media_type === 'movie' || r.media_type === 'tv'
-    );
-    const match = results[0];
-    if (!match) return patch;
+    try {
+        let url = `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(item.title)}`;
+        if (item.year) url += `&year=${item.year}`;
+        const data = await fetchJson(url);
+        const results = (data.results || []).filter(
+            (r) => r.media_type === 'movie' || r.media_type === 'tv'
+        );
+        const match = results[0];
+        if (!match) return patch;
 
-    patch.type = match.media_type === 'tv' ? 'series' : 'movie';
-    if (match.media_type === 'tv') {
-        patch.tmdbTvId = match.id;
-    }
+        patch.type = match.media_type === 'tv' ? 'series' : 'movie';
+        if (match.media_type === 'tv') {
+            patch.tmdbTvId = match.id;
+        }
 
-    const mediaType = match.media_type === 'tv' ? 'tv' : 'movie';
-    const needDetails = !item.posterUrl || !item.genre || !item.imdbLink;
-
-    if (needDetails) {
+        const mediaType = match.media_type === 'tv' ? 'tv' : 'movie';
         const dUrl = `https://api.themoviedb.org/3/${mediaType}/${match.id}?api_key=${apiKey}&append_to_response=external_ids,credits`;
         const details = await fetchJson(dUrl);
+
         if (!item.posterUrl && details.poster_path) {
             patch.posterUrl = tmdbPoster(details.poster_path);
         }
@@ -49,8 +53,12 @@ async function enrichFromTmdb(item, apiKey) {
         if (!item.imdbLink && details.external_ids?.imdb_id) {
             patch.imdbLink = `https://www.imdb.com/title/${details.external_ids.imdb_id}/`;
         }
-    } else if (!item.posterUrl && match.poster_path) {
-        patch.posterUrl = tmdbPoster(match.poster_path);
+        const overview = String(details.overview || '').trim();
+        if (overview && !String(item.notes || '').trim()) {
+            patch.notes = overview;
+        }
+    } catch (e) {
+        console.warn('enrichFromTmdb', item?.title, e.message || e);
     }
 
     return patch;
@@ -58,33 +66,56 @@ async function enrichFromTmdb(item, apiKey) {
 
 async function enrichFromOmdb(item, apiKey) {
     const patch = {};
-    if (!apiKey || (item.imdbRating != null && item.imdbRating !== '')) return patch;
+    if (!apiKey) return patch;
 
-    let url = `https://www.omdbapi.com/?apikey=${apiKey}&t=${encodeURIComponent(item.title)}`;
-    if (item.year) url += `&y=${item.year}`;
-    const o = await fetchJson(url);
-    if (o.Response !== 'True') return patch;
+    const needRating = item.imdbRating == null || item.imdbRating === '';
+    const needRt = item.rtRating == null || item.rtRating === '';
+    const needNotes = !String(item.notes || '').trim();
+    if (!needRating && !needRt && !needNotes) return patch;
+
+    let url;
+    const imdbId = extractImdbId(item.imdbLink);
+    if (imdbId) {
+        url = `https://www.omdbapi.com/?apikey=${apiKey}&i=${encodeURIComponent(imdbId)}&plot=full`;
+    } else {
+        url = `https://www.omdbapi.com/?apikey=${apiKey}&t=${encodeURIComponent(item.title)}`;
+        if (item.year) url += `&y=${item.year}`;
+        url += '&plot=full';
+    }
+
+    let o;
+    try {
+        const r = await fetch(url);
+        o = await r.json();
+    } catch (e) {
+        console.warn('enrichFromOmdb fetch', item?.title, e.message || e);
+        return patch;
+    }
+    if (!o || o.Response !== 'True') return patch;
 
     const oType = (o.Type || '').toLowerCase();
     if (oType === 'series' || oType === 'episode') patch.type = 'series';
     else if (oType === 'movie') patch.type = 'movie';
 
-    if (o.imdbRating && o.imdbRating !== 'N/A') {
+    if (needRating && o.imdbRating && o.imdbRating !== 'N/A') {
         patch.imdbRating = parseFloat(o.imdbRating);
     }
     if (!item.imdbLink && o.imdbID) {
         patch.imdbLink = `https://www.imdb.com/title/${o.imdbID}/`;
     }
     if (!item.genre && o.Genre) patch.genre = o.Genre;
-    if (o.Ratings) {
+    if (o.Ratings && needRt) {
         const rt = o.Ratings.find((r) => r.Source === 'Rotten Tomatoes');
-        if (rt && (item.rtRating == null || item.rtRating === '')) {
+        if (rt) {
             const n = parseInt(String(rt.Value).replace(/%/g, ''), 10);
             if (!Number.isNaN(n)) patch.rtRating = n;
         }
     }
     if (!item.posterUrl && o.Poster && o.Poster !== 'N/A') {
         patch.posterUrl = o.Poster;
+    }
+    if (needNotes && o.Plot && o.Plot !== 'N/A') {
+        patch.notes = o.Plot;
     }
     return patch;
 }
@@ -102,6 +133,8 @@ function combinePatches(item, tmdbPatch, omdbPatch) {
     if (tmdbPatch.tmdbTvId != null) out.tmdbTvId = tmdbPatch.tmdbTvId;
     if (omdbPatch.imdbRating !== undefined) out.imdbRating = omdbPatch.imdbRating;
     if (omdbPatch.rtRating !== undefined) out.rtRating = omdbPatch.rtRating;
+    if (omdbPatch.notes) out.notes = omdbPatch.notes;
+    else if (tmdbPatch.notes) out.notes = tmdbPatch.notes;
     return out;
 }
 
@@ -119,6 +152,13 @@ function foundNewData(original, merged) {
     if (merged.imdbLink && merged.imdbLink !== (original.imdbLink || '')) return true;
     if (merged.genre && merged.genre !== (original.genre || '')) return true;
     if (merged.rtRating != null && merged.rtRating !== '' && (original.rtRating == null || original.rtRating === '')) {
+        return true;
+    }
+    if (
+        merged.notes &&
+        String(merged.notes).trim() &&
+        String(merged.notes).trim() !== String(original.notes || '').trim()
+    ) {
         return true;
     }
     if (merged.type && (merged.type === 'movie' || merged.type === 'series')) {
@@ -144,16 +184,16 @@ async function enrichOneItem(item, tmdbKey, omdbKey) {
         genre: item.genre || '',
         imdbLink: item.imdbLink || '',
         rtRating: item.rtRating,
+        notes: item.notes != null ? String(item.notes) : '',
         tmdbTvId: item.tmdbTvId != null ? item.tmdbTvId : null
     };
     if (!safe.title) {
         return { id: item.id, patch: { id: item.id }, found: false };
     }
 
-    const [tmdbPatch, omdbPatch] = await Promise.all([
-        enrichFromTmdb(safe, tmdbKey),
-        enrichFromOmdb(safe, omdbKey)
-    ]);
+    const tmdbPatch = await enrichFromTmdb(safe, tmdbKey);
+    const afterTmdb = { ...safe, ...tmdbPatch };
+    const omdbPatch = await enrichFromOmdb(afterTmdb, omdbKey);
 
     const combined = combinePatches(safe, tmdbPatch, omdbPatch);
     const found = foundNewData(safe, combined);

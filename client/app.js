@@ -87,12 +87,15 @@ let searchDebounceTimer = null;
 
 const ENRICH_BATCH_SIZE = 120;
 
-const TMDB_SEASON1_DELAY_MS = 130;
-const TMDB_SEASON1_MAX_FETCHES = 40;
-/** Max series we try to resolve (search + season) per hydrate pass */
-const TMDB_SEASON1_MAX_RESOLVE_ATTEMPTS = 40;
+const TMDB_SEASON_HYDRATE_DELAY_MS = 130;
+/** TV details + per-season fetches, across all series in one hydrate pass */
+const TMDB_SEASON_HYDRATE_MAX_FETCHES = 180;
+/** Max series we try to resolve (search + seasons) per hydrate pass */
+const TMDB_SEASON_HYDRATE_MAX_RESOLVE_ATTEMPTS = 40;
+/** Cap TMDB season requests per show (Simpsons-scale shows) */
+const TMDB_MAX_SEASONS_PER_SHOW = 50;
 
-let season1HydrateRunning = false;
+let tmdbSeasonHydrateRunning = false;
 
 // ============================================
 // PROFILES (you vs partner — separate lists, same site)
@@ -292,7 +295,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderWatchlist();
     updateStats();
     setupEventListeners();
-    void hydrateTmdbSeason1Guides();
+    void hydrateTmdbSeasonGuides();
 });
 
 // Check if server has API keys configured
@@ -553,6 +556,8 @@ function normalizeItemEpisodes(item) {
             if ('episodes' in item) delete item.episodes;
             if ('tmdbTvId' in item) delete item.tmdbTvId;
             if ('tmdbSeason1Guide' in item) delete item.tmdbSeason1Guide;
+            if ('tmdbSeasonGuides' in item) delete item.tmdbSeasonGuides;
+            if ('tmdbTvShowMeta' in item) delete item.tmdbTvShowMeta;
         }
         return;
     }
@@ -560,23 +565,69 @@ function normalizeItemEpisodes(item) {
         const tid = parseInt(item.tmdbTvId, 10);
         item.tmdbTvId = Number.isFinite(tid) && tid > 0 ? tid : null;
     }
+
     if (item.tmdbSeason1Guide && typeof item.tmdbSeason1Guide === 'object') {
-        if (!Array.isArray(item.tmdbSeason1Guide.episodes)) {
-            delete item.tmdbSeason1Guide;
-        } else {
-            item.tmdbSeason1Guide.episodes = item.tmdbSeason1Guide.episodes
-                .filter(ep => ep && Number.isFinite(Number(ep.episode_number)))
-                .map(ep => ({
-                    episode_number: parseInt(ep.episode_number, 10),
-                    name: typeof ep.name === 'string' ? ep.name : '',
-                    air_date: typeof ep.air_date === 'string' ? ep.air_date : '',
-                    runtime: ep.runtime != null ? ep.runtime : null
-                }));
-            if (item.tmdbSeason1Guide.tmdbTvId != null) {
-                const g = parseInt(item.tmdbSeason1Guide.tmdbTvId, 10);
-                item.tmdbSeason1Guide.tmdbTvId = Number.isFinite(g) ? g : item.tmdbTvId;
+        if (Array.isArray(item.tmdbSeason1Guide.episodes)) {
+            item.tmdbSeasonGuides = item.tmdbSeasonGuides && typeof item.tmdbSeasonGuides === 'object' ? item.tmdbSeasonGuides : {};
+            if (!item.tmdbSeasonGuides['1']) {
+                const gTv = parseInt(item.tmdbSeason1Guide.tmdbTvId, 10);
+                item.tmdbSeasonGuides['1'] = {
+                    fetchedAt:
+                        typeof item.tmdbSeason1Guide.fetchedAt === 'string'
+                            ? item.tmdbSeason1Guide.fetchedAt
+                            : new Date().toISOString(),
+                    tmdbTvId: Number.isFinite(gTv) ? gTv : item.tmdbTvId,
+                    seasonNumber: 1,
+                    episodes: item.tmdbSeason1Guide.episodes
+                };
             }
         }
+        delete item.tmdbSeason1Guide;
+    }
+
+    if (item.tmdbSeasonGuides && typeof item.tmdbSeasonGuides === 'object') {
+        const next = {};
+        for (const [k, v] of Object.entries(item.tmdbSeasonGuides)) {
+            const sn = parseInt(k, 10);
+            if (!Number.isFinite(sn) || sn < 1) continue;
+            if (!v || typeof v !== 'object' || !Array.isArray(v.episodes)) continue;
+            next[String(sn)] = {
+                fetchedAt:
+                    typeof v.fetchedAt === 'string' ? v.fetchedAt : new Date().toISOString(),
+                tmdbTvId:
+                    v.tmdbTvId != null
+                        ? (() => {
+                              const x = parseInt(v.tmdbTvId, 10);
+                              return Number.isFinite(x) ? x : item.tmdbTvId;
+                          })()
+                        : item.tmdbTvId,
+                seasonNumber: sn,
+                episodes: v.episodes
+                    .filter(ep => ep && Number.isFinite(Number(ep.episode_number)))
+                    .map(ep => ({
+                        episode_number: parseInt(ep.episode_number, 10),
+                        name: typeof ep.name === 'string' ? ep.name : '',
+                        air_date: typeof ep.air_date === 'string' ? ep.air_date : '',
+                        runtime: ep.runtime != null ? ep.runtime : null
+                    }))
+            };
+        }
+        if (Object.keys(next).length) item.tmdbSeasonGuides = next;
+        else delete item.tmdbSeasonGuides;
+    }
+
+    if (item.tmdbTvShowMeta && typeof item.tmdbTvShowMeta === 'object') {
+        const nos = parseInt(item.tmdbTvShowMeta.numberOfSeasons, 10);
+        const tvMeta = parseInt(item.tmdbTvShowMeta.tmdbTvId, 10);
+        item.tmdbTvShowMeta = {
+            fetchedAt:
+                typeof item.tmdbTvShowMeta.fetchedAt === 'string'
+                    ? item.tmdbTvShowMeta.fetchedAt
+                    : new Date().toISOString(),
+            tmdbTvId: Number.isFinite(tvMeta) ? tvMeta : item.tmdbTvId,
+            numberOfSeasons: Number.isFinite(nos) && nos >= 1 ? nos : null
+        };
+        if (item.tmdbTvShowMeta.numberOfSeasons == null) delete item.tmdbTvShowMeta;
     }
     if (!Array.isArray(item.episodes)) {
         item.episodes = [];
@@ -1102,6 +1153,44 @@ function closeModal() {
     watchlistForm.reset();
 }
 
+function findWatchlistDuplicateIndex(title, year, excludeId = null) {
+    const t = String(title || '').trim().toLowerCase();
+    const y = year != null && year !== '' ? parseInt(year, 10) : null;
+    const yNorm = Number.isFinite(y) ? y : null;
+    return watchlist.findIndex(w => {
+        if (excludeId != null && w.id === excludeId) return false;
+        const wt = String(w.title || '').trim().toLowerCase();
+        const wy = w.year != null ? parseInt(w.year, 10) : null;
+        const wyNorm = Number.isFinite(wy) ? wy : null;
+        return wt === t && wyNorm === yNorm;
+    });
+}
+
+function mergeEmptyFormFieldsFromPrev(merged, prev, formData) {
+    const optional = [
+        'notes',
+        'genre',
+        'posterUrl',
+        'imdbLink',
+        'letterboxdLink',
+        'rottenTomatoesLink',
+        'justWatchLink',
+        'myRating',
+        'imdbRating',
+        'rtRating'
+    ];
+    for (const key of optional) {
+        const v = formData[key];
+        const empty =
+            v == null ||
+            (typeof v === 'string' && !v.trim()) ||
+            (typeof v === 'number' && !Number.isFinite(v));
+        if (empty && prev[key] != null && prev[key] !== '') {
+            merged[key] = prev[key];
+        }
+    }
+}
+
 function handleFormSubmit(e) {
     e.preventDefault();
     
@@ -1132,12 +1221,15 @@ function handleFormSubmit(e) {
     const editId = document.getElementById('editId').value;
     
     if (editId) {
-        const index = watchlist.findIndex(i => i.id === editId);
+        let index = watchlist.findIndex(i => i.id === editId);
+        if (index === -1) {
+            index = findWatchlistDuplicateIndex(formData.title, formData.year);
+        }
         if (index !== -1) {
             const prev = watchlist[index];
             const keptEpisodes =
                 formData.type === 'series' && Array.isArray(prev.episodes) ? prev.episodes : [];
-            watchlist[index] = { ...prev, ...formData };
+            watchlist[index] = { ...prev, ...formData, id: prev.id, dateAdded: prev.dateAdded };
             if (formData.type === 'series') {
                 watchlist[index].episodes = keptEpisodes;
                 if (tmdbTvId != null) watchlist[index].tmdbTvId = tmdbTvId;
@@ -1149,18 +1241,37 @@ function handleFormSubmit(e) {
             showToast('Title updated successfully!', 'success');
         }
     } else {
-        const newItem = {
-            id: generateId(),
-            ...formData,
-            dateAdded: new Date().toISOString()
-        };
-        if (formData.type === 'series') {
-            newItem.episodes = [];
-            if (tmdbTvId != null) newItem.tmdbTvId = tmdbTvId;
+        const dupIdx = findWatchlistDuplicateIndex(formData.title, formData.year);
+        if (dupIdx !== -1) {
+            const prev = watchlist[dupIdx];
+            const keptEpisodes =
+                formData.type === 'series' && Array.isArray(prev.episodes) ? prev.episodes : [];
+            const merged = { ...prev, ...formData, id: prev.id, dateAdded: prev.dateAdded };
+            mergeEmptyFormFieldsFromPrev(merged, prev, formData);
+            watchlist[dupIdx] = merged;
+            if (formData.type === 'series') {
+                watchlist[dupIdx].episodes = keptEpisodes;
+                if (tmdbTvId != null) watchlist[dupIdx].tmdbTvId = tmdbTvId;
+                else delete watchlist[dupIdx].tmdbTvId;
+            } else {
+                delete watchlist[dupIdx].episodes;
+            }
+            normalizeItemEpisodes(watchlist[dupIdx]);
+            showToast('Updated existing title (same name & year) instead of adding a duplicate.', 'success');
+        } else {
+            const newItem = {
+                id: generateId(),
+                ...formData,
+                dateAdded: new Date().toISOString()
+            };
+            if (formData.type === 'series') {
+                newItem.episodes = [];
+                if (tmdbTvId != null) newItem.tmdbTvId = tmdbTvId;
+            }
+            watchlist.unshift(newItem);
+            normalizeItemEpisodes(newItem);
+            showToast('Title added to your watchlist!', 'success');
         }
-        watchlist.unshift(newItem);
-        normalizeItemEpisodes(newItem);
-        showToast('Title added to your watchlist!', 'success');
     }
     
     saveWatchlist();
@@ -1907,6 +2018,35 @@ function importBackupFromJsonFile(file) {
                             episodes: it.tmdbSeason1Guide.episodes
                         };
                     }
+                    if (it.tmdbSeasonGuides && typeof it.tmdbSeasonGuides === 'object') {
+                        try {
+                            row.tmdbSeasonGuides = JSON.parse(JSON.stringify(it.tmdbSeasonGuides));
+                        } catch (e) {
+                            /* skip corrupt */
+                        }
+                    }
+                    if (it.tmdbTvShowMeta && typeof it.tmdbTvShowMeta === 'object') {
+                        row.tmdbTvShowMeta = {
+                            fetchedAt:
+                                typeof it.tmdbTvShowMeta.fetchedAt === 'string'
+                                    ? it.tmdbTvShowMeta.fetchedAt
+                                    : new Date().toISOString(),
+                            tmdbTvId:
+                                it.tmdbTvShowMeta.tmdbTvId != null
+                                    ? parseInt(it.tmdbTvShowMeta.tmdbTvId, 10) || row.tmdbTvId
+                                    : row.tmdbTvId,
+                            numberOfSeasons:
+                                it.tmdbTvShowMeta.numberOfSeasons != null
+                                    ? parseInt(it.tmdbTvShowMeta.numberOfSeasons, 10)
+                                    : null
+                        };
+                        if (
+                            row.tmdbTvShowMeta.numberOfSeasons == null ||
+                            !Number.isFinite(row.tmdbTvShowMeta.numberOfSeasons)
+                        ) {
+                            delete row.tmdbTvShowMeta;
+                        }
+                    }
                 }
                 return row;
             });
@@ -1937,7 +2077,7 @@ function importBackupFromJsonFile(file) {
             if (hasCloudSync) pushWatchlistToCloud();
             renderWatchlist();
             updateStats();
-            void hydrateTmdbSeason1Guides();
+            void hydrateTmdbSeasonGuides();
             closeSettingsModal();
         } catch (err) {
             showToast('Invalid JSON file', 'error');
@@ -2077,36 +2217,53 @@ async function fetchTMDBTvSeason(tvId, seasonNumber) {
     }
 }
 
-function hasCachedSeason1Guide(item) {
-    return !!(
-        item.tmdbSeason1Guide &&
-        item.tmdbSeason1Guide.fetchedAt &&
-        Array.isArray(item.tmdbSeason1Guide.episodes)
-    );
+function seasonGuideIsCached(item, seasonNum) {
+    const g = item.tmdbSeasonGuides?.[String(seasonNum)];
+    return !!(g && g.fetchedAt && Array.isArray(g.episodes));
 }
 
-function mergeSeason1GuideIntoItem(item, tvId, data) {
-    const eps = Array.isArray(data.episodes) ? data.episodes : [];
-    const slim = eps.map(ep => ({
-        episode_number: parseInt(ep.episode_number, 10),
-        name: typeof ep.name === 'string' ? ep.name : '',
-        air_date: typeof ep.air_date === 'string' ? ep.air_date : '',
-        runtime: ep.runtime != null ? ep.runtime : null
-    })).filter(ep => Number.isFinite(ep.episode_number) && ep.episode_number >= 1);
+function seriesNeedsTmdbSeasonHydration(item) {
+    if (item.type !== 'series' || item.tmdbTvId == null || !Number.isFinite(Number(item.tmdbTvId))) {
+        return false;
+    }
+    if (!item.tmdbTvShowMeta?.numberOfSeasons) return true;
+    const n = Math.min(item.tmdbTvShowMeta.numberOfSeasons, TMDB_MAX_SEASONS_PER_SHOW);
+    for (let s = 1; s <= n; s++) {
+        if (!seasonGuideIsCached(item, s)) return true;
+    }
+    return false;
+}
 
-    item.tmdbSeason1Guide = {
+function mergeSeasonGuideIntoItem(item, tvId, seasonNum, data) {
+    const snRaw = data.season_number != null ? parseInt(data.season_number, 10) : seasonNum;
+    const sn = Number.isFinite(snRaw) && snRaw >= 1 ? snRaw : seasonNum;
+    const eps = Array.isArray(data.episodes) ? data.episodes : [];
+    const slim = eps
+        .map(ep => ({
+            episode_number: parseInt(ep.episode_number, 10),
+            name: typeof ep.name === 'string' ? ep.name : '',
+            air_date: typeof ep.air_date === 'string' ? ep.air_date : '',
+            runtime: ep.runtime != null ? ep.runtime : null
+        }))
+        .filter(ep => Number.isFinite(ep.episode_number) && ep.episode_number >= 1);
+
+    if (!item.tmdbSeasonGuides || typeof item.tmdbSeasonGuides !== 'object') {
+        item.tmdbSeasonGuides = {};
+    }
+    item.tmdbSeasonGuides[String(sn)] = {
         fetchedAt: new Date().toISOString(),
         tmdbTvId: tvId,
+        seasonNumber: sn,
         episodes: slim
     };
 
     if (!Array.isArray(item.episodes)) item.episodes = [];
     const existing = new Set(item.episodes.map(e => `${e.season}-${e.episode}`));
     for (const ep of slim) {
-        const key = `1-${ep.episode_number}`;
+        const key = `${sn}-${ep.episode_number}`;
         if (!existing.has(key)) {
             item.episodes.push({
-                season: 1,
+                season: sn,
                 episode: ep.episode_number,
                 title: ep.name || '',
                 watched: false
@@ -2115,6 +2272,55 @@ function mergeSeason1GuideIntoItem(item, tvId, data) {
         }
     }
     return true;
+}
+
+async function ensureTmdbSeasonGuidesForItem(item, budget) {
+    if (item.type !== 'series') return false;
+    const tvId = Number(item.tmdbTvId);
+    if (!Number.isFinite(tvId) || tvId < 1) return false;
+
+    let changed = false;
+    const delay = () => new Promise(r => setTimeout(r, TMDB_SEASON_HYDRATE_DELAY_MS));
+
+    if (!item.tmdbTvShowMeta?.numberOfSeasons) {
+        if (budget.fetchCount >= budget.maxFetches) return false;
+        const show = await getTMDBDetails(tvId, 'tv');
+        budget.fetchCount++;
+        await delay();
+        if (show?.number_of_seasons != null) {
+            const nos = parseInt(show.number_of_seasons, 10);
+            if (Number.isFinite(nos) && nos >= 1) {
+                item.tmdbTvShowMeta = {
+                    fetchedAt: new Date().toISOString(),
+                    tmdbTvId: tvId,
+                    numberOfSeasons: nos
+                };
+                changed = true;
+            }
+        }
+        if (!item.tmdbTvShowMeta?.numberOfSeasons) {
+            item.tmdbTvShowMeta = {
+                fetchedAt: new Date().toISOString(),
+                tmdbTvId: tvId,
+                numberOfSeasons: 1
+            };
+            changed = true;
+        }
+    }
+
+    const n = Math.min(item.tmdbTvShowMeta.numberOfSeasons, TMDB_MAX_SEASONS_PER_SHOW);
+    for (let s = 1; s <= n; s++) {
+        if (budget.fetchCount >= budget.maxFetches) break;
+        if (seasonGuideIsCached(item, s)) continue;
+        const data = await fetchTMDBTvSeason(tvId, s);
+        budget.fetchCount++;
+        if (data && Array.isArray(data.episodes)) {
+            mergeSeasonGuideIntoItem(item, tvId, s, data);
+            changed = true;
+        }
+        await delay();
+    }
+    return changed;
 }
 
 async function searchTMDBTv(title, year = null) {
@@ -2163,61 +2369,50 @@ async function resolveTmdbTvIdForSeries(item) {
     return first && first.id ? first.id : null;
 }
 
-async function hydrateTmdbSeason1Guides() {
-    if (season1HydrateRunning) return;
+async function hydrateTmdbSeasonGuides() {
+    if (tmdbSeasonHydrateRunning) return;
     if (!(serverHasTmdbKey || tmdbApiKey)) return;
 
-    season1HydrateRunning = true;
+    tmdbSeasonHydrateRunning = true;
     let changed = false;
-    let fetchCount = 0;
+    const budget = { fetchCount: 0, maxFetches: TMDB_SEASON_HYDRATE_MAX_FETCHES };
     let resolveAttempts = 0;
 
     try {
         const needGuide = watchlist.filter(
             item =>
                 item.type === 'series' &&
-                !hasCachedSeason1Guide(item) &&
+                seriesNeedsTmdbSeasonHydration(item) &&
                 item.tmdbTvId != null &&
                 Number.isFinite(Number(item.tmdbTvId))
         );
 
         for (const item of needGuide) {
-            if (fetchCount >= TMDB_SEASON1_MAX_FETCHES) break;
-            const tvId = Number(item.tmdbTvId);
-            const data = await fetchTMDBTvSeason(tvId, 1);
-            fetchCount++;
-            if (data && Array.isArray(data.episodes)) {
-                mergeSeason1GuideIntoItem(item, tvId, data);
-                changed = true;
-            }
-            await new Promise(r => setTimeout(r, TMDB_SEASON1_DELAY_MS));
+            if (budget.fetchCount >= budget.maxFetches) break;
+            const c = await ensureTmdbSeasonGuidesForItem(item, budget);
+            if (c) changed = true;
         }
 
         const needResolve = watchlist.filter(
             item =>
                 item.type === 'series' &&
-                !hasCachedSeason1Guide(item) &&
+                seriesNeedsTmdbSeasonHydration(item) &&
                 (item.tmdbTvId == null || !Number.isFinite(Number(item.tmdbTvId)))
         );
 
         for (const item of needResolve) {
-            if (fetchCount >= TMDB_SEASON1_MAX_FETCHES) break;
-            if (resolveAttempts >= TMDB_SEASON1_MAX_RESOLVE_ATTEMPTS) break;
+            if (budget.fetchCount >= budget.maxFetches) break;
+            if (resolveAttempts >= TMDB_SEASON_HYDRATE_MAX_RESOLVE_ATTEMPTS) break;
             resolveAttempts++;
             const tvId = await resolveTmdbTvIdForSeries(item);
             if (!tvId) {
-                await new Promise(r => setTimeout(r, TMDB_SEASON1_DELAY_MS));
+                await new Promise(r => setTimeout(r, TMDB_SEASON_HYDRATE_DELAY_MS));
                 continue;
             }
             item.tmdbTvId = tvId;
             changed = true;
-            const data = await fetchTMDBTvSeason(tvId, 1);
-            fetchCount++;
-            if (data && Array.isArray(data.episodes)) {
-                mergeSeason1GuideIntoItem(item, tvId, data);
-                changed = true;
-            }
-            await new Promise(r => setTimeout(r, TMDB_SEASON1_DELAY_MS));
+            const c = await ensureTmdbSeasonGuidesForItem(item, budget);
+            if (c) changed = true;
         }
 
         if (changed) {
@@ -2226,9 +2421,9 @@ async function hydrateTmdbSeason1Guides() {
             renderWatchlist();
         }
     } catch (e) {
-        console.warn('Season 1 hydrate', e);
+        console.warn('TMDB season guides hydrate', e);
     } finally {
-        season1HydrateRunning = false;
+        tmdbSeasonHydrateRunning = false;
     }
 }
 
@@ -2282,7 +2477,9 @@ async function getOMDBDetails(imdbId) {
     // Use server API if available
     if (serverHasOmdbKey) {
         try {
-            const response = await fetch(`/api/omdb?i=${encodeURIComponent(imdbId)}`);
+            const response = await fetch(
+                `/api/omdb?i=${encodeURIComponent(imdbId)}&plot=${encodeURIComponent('full')}`
+            );
             const data = await response.json();
             
             if (data.Response === 'True') {
@@ -2298,7 +2495,7 @@ async function getOMDBDetails(imdbId) {
     if (!omdbApiKey) return null;
     
     try {
-        const response = await fetch(`${OMDB_BASE_URL}?apikey=${omdbApiKey}&i=${imdbId}&plot=short`);
+        const response = await fetch(`${OMDB_BASE_URL}?apikey=${omdbApiKey}&i=${imdbId}&plot=full`);
         const data = await response.json();
         
         if (data.Response === 'True') {
@@ -2314,7 +2511,7 @@ async function getOMDBDetails(imdbId) {
 async function getOMDBByTitle(title, year = null) {
     // Use server API if available
     if (serverHasOmdbKey) {
-        let url = `/api/omdb?t=${encodeURIComponent(title)}`;
+        let url = `/api/omdb?t=${encodeURIComponent(title)}&plot=full`;
         if (year) url += `&y=${year}`;
         
         try {
@@ -2333,7 +2530,7 @@ async function getOMDBByTitle(title, year = null) {
     
     if (!omdbApiKey) return null;
     
-    let url = `${OMDB_BASE_URL}?apikey=${omdbApiKey}&t=${encodeURIComponent(title)}`;
+    let url = `${OMDB_BASE_URL}?apikey=${omdbApiKey}&t=${encodeURIComponent(title)}&plot=full`;
     if (year) url += `&y=${year}`;
     
     try {
@@ -2598,15 +2795,20 @@ async function bulkFetchDetails(options = {}) {
         return;
     }
 
-    // Find items missing posters or ratings (optionally limit to specific ids, e.g. just imported)
-    const itemsToUpdate = watchlist.filter(item =>
-        (!item.posterUrl || !item.imdbRating) &&
-        (!onlyIds || onlyIds.has(item.id))
+    // Missing poster, ratings, and/or description (notes) — optionally limit to specific ids
+    const needsEnrich = item =>
+        !item.posterUrl ||
+        item.imdbRating == null ||
+        item.imdbRating === '' ||
+        !String(item.notes || '').trim();
+
+    const itemsToUpdate = watchlist.filter(
+        item => needsEnrich(item) && (!onlyIds || onlyIds.has(item.id))
     );
 
     if (itemsToUpdate.length === 0) {
         if (!quietEmpty) {
-            showToast('All items already have posters and ratings!', 'success');
+            showToast('All items already have posters, ratings, and descriptions!', 'success');
         }
         return;
     }
@@ -2645,10 +2847,19 @@ async function bulkFetchDetails(options = {}) {
                     if (p.imdbLink) w.imdbLink = p.imdbLink;
                     if (p.genre) w.genre = p.genre;
                     if (p.rtRating != null && p.rtRating !== '') w.rtRating = p.rtRating;
+                    if (
+                        (!w.notes || !String(w.notes).trim()) &&
+                        p.notes != null &&
+                        String(p.notes).trim()
+                    ) {
+                        w.notes = String(p.notes).trim();
+                    }
                     if (p.type === 'movie' || p.type === 'series') w.type = p.type;
                     if (p.type === 'movie') {
                         delete w.tmdbTvId;
                         delete w.tmdbSeason1Guide;
+                        delete w.tmdbSeasonGuides;
+                        delete w.tmdbTvShowMeta;
                     }
                     if (
                         w.type === 'series' &&
@@ -2675,10 +2886,10 @@ async function bulkFetchDetails(options = {}) {
     if (tryServerBatch && batchCompletedOk) {
         saveWatchlist();
         renderWatchlist();
-        await hydrateTmdbSeason1Guides();
+        await hydrateTmdbSeasonGuides();
         if (progressDiv) progressDiv.style.display = 'none';
         if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;
-        let message = `Updated ${updated} items with posters/ratings`;
+        let message = `Updated ${updated} items with posters, ratings, and descriptions`;
         if (failed > 0) message += ` (${failed} not found)`;
         showToast(message, 'success');
         return;
@@ -2686,9 +2897,8 @@ async function bulkFetchDetails(options = {}) {
 
     let toProcess = itemsToUpdate;
     if (tryServerBatch && !batchCompletedOk) {
-        toProcess = watchlist.filter(item =>
-            (!item.posterUrl || !item.imdbRating) &&
-            (!onlyIds || onlyIds.has(item.id))
+        toProcess = watchlist.filter(
+            item => needsEnrich(item) && (!onlyIds || onlyIds.has(item.id))
         );
         if (toProcess.length && !tmdbApiKey && !omdbApiKey) {
             saveWatchlist();
@@ -2737,7 +2947,8 @@ async function bulkFetchDetails(options = {}) {
                 const needDetails =
                     !watchlist[index].posterUrl ||
                     !watchlist[index].genre ||
-                    !watchlist[index].imdbLink;
+                    !watchlist[index].imdbLink ||
+                    !String(watchlist[index].notes || '').trim();
                 if (needDetails) {
                     const tmdbDetails = await getTMDBDetails(match.id, mediaType);
                     if (tmdbDetails) {
@@ -2753,6 +2964,11 @@ async function bulkFetchDetails(options = {}) {
                             watchlist[index].imdbLink = `https://www.imdb.com/title/${tmdbDetails.external_ids.imdb_id}/`;
                             foundData = true;
                         }
+                        const ov = String(tmdbDetails.overview || '').trim();
+                        if (ov && !String(watchlist[index].notes || '').trim()) {
+                            watchlist[index].notes = ov;
+                            foundData = true;
+                        }
                     }
                 } else if (!watchlist[index].posterUrl && match.poster_path) {
                     watchlist[index].posterUrl = getTMDBPosterUrl(match.poster_path, 'w500');
@@ -2762,8 +2978,18 @@ async function bulkFetchDetails(options = {}) {
         }
 
         const canOmdb = serverHasOmdbKey || omdbApiKey;
-        if (canOmdb && (!watchlist[index].imdbRating || !hadTmdbMatch)) {
-            const omdbDetails = await getOMDBByTitle(item.title, item.year);
+        const needOmdbRatings =
+            watchlist[index].imdbRating == null ||
+            watchlist[index].imdbRating === '' ||
+            watchlist[index].rtRating == null ||
+            watchlist[index].rtRating === '';
+        const needOmdbNotes = !String(watchlist[index].notes || '').trim();
+        if (canOmdb && (!hadTmdbMatch || needOmdbRatings || needOmdbNotes)) {
+            const imdbM = String(watchlist[index].imdbLink || '').match(/tt\d+/i);
+            let omdbDetails = imdbM ? await getOMDBDetails(imdbM[0]) : null;
+            if (!omdbDetails) {
+                omdbDetails = await getOMDBByTitle(item.title, item.year);
+            }
             if (omdbDetails && omdbDetails.Response === 'True') {
                 if (!hadTmdbMatch) {
                     const t = (omdbDetails.Type || '').toLowerCase();
@@ -2794,11 +3020,23 @@ async function bulkFetchDetails(options = {}) {
                 if (omdbDetails.Ratings) {
                     const rtRating = omdbDetails.Ratings.find(r => r.Source === 'Rotten Tomatoes');
                     if (rtRating && !watchlist[index].rtRating) {
-                        watchlist[index].rtRating = parseInt(rtRating.Value);
+                        const n = parseInt(String(rtRating.Value).replace(/%/g, ''), 10);
+                        if (!Number.isNaN(n)) {
+                            watchlist[index].rtRating = n;
+                            foundData = true;
+                        }
                     }
                 }
                 if (!watchlist[index].posterUrl && omdbDetails.Poster !== 'N/A') {
                     watchlist[index].posterUrl = omdbDetails.Poster;
+                    foundData = true;
+                }
+                if (
+                    needOmdbNotes &&
+                    omdbDetails.Plot &&
+                    omdbDetails.Plot !== 'N/A'
+                ) {
+                    watchlist[index].notes = omdbDetails.Plot;
                     foundData = true;
                 }
             }
@@ -2815,12 +3053,12 @@ async function bulkFetchDetails(options = {}) {
     
     saveWatchlist();
     renderWatchlist();
-    await hydrateTmdbSeason1Guides();
+    await hydrateTmdbSeasonGuides();
 
     if (progressDiv) progressDiv.style.display = 'none';
     if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;
 
-    let message = `Updated ${updated} items with posters/ratings`;
+    let message = `Updated ${updated} items with posters, ratings, and descriptions`;
     if (failed > 0) {
         message += ` (${failed} not found)`;
     }
