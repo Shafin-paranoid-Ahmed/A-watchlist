@@ -428,6 +428,45 @@ body::before {
     box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.12);
 }
 
+.view-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    flex-wrap: wrap;
+}
+
+.view-toggle-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: var(--space-xs);
+}
+
+.view-toggle-btn {
+    padding: var(--space-sm) var(--space-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.view-toggle-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border-light);
+}
+
+.view-toggle-btn.active {
+    background: var(--accent-gold);
+    color: var(--bg-primary);
+    border-color: var(--accent-gold);
+}
+
 .import-btn {
     display: flex;
     align-items: center;
@@ -491,6 +530,47 @@ body::before {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: var(--space-lg);
+}
+
+.watchlist-grid.watchlist-grid--tiles {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--space-md);
+}
+
+.watchlist-grid.watchlist-grid--tiles .card-poster {
+    height: 200px;
+}
+
+.watchlist-grid.watchlist-grid--tiles .card-content {
+    padding: var(--space-sm) var(--space-md);
+}
+
+.watchlist-grid.watchlist-grid--tiles .card-title {
+    font-size: 0.95rem;
+    margin-bottom: var(--space-xs);
+}
+
+.watchlist-grid.watchlist-grid--tiles .card-meta {
+    margin-bottom: var(--space-sm);
+    font-size: 0.78rem;
+}
+
+.watchlist-grid.watchlist-grid--tiles .card-director {
+    font-size: 0.72rem;
+    margin-bottom: var(--space-xs);
+}
+
+.watchlist-grid.watchlist-grid--tiles .card-notes {
+    display: none;
+}
+
+.watchlist-grid.watchlist-grid--tiles .card-episodes {
+    display: none;
+}
+
+.watchlist-grid.watchlist-grid--tiles .card-links {
+    margin-top: var(--space-sm);
+    padding-top: var(--space-sm);
 }
 
 /* Card */
@@ -602,6 +682,19 @@ body::before {
 .card-genre {
     color: var(--accent-gold);
     font-size: 0.8rem;
+}
+
+.card-director {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-sm);
+    line-height: 1.35;
+}
+
+.card-director .card-director-label {
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-right: 0.25em;
 }
 
 .card-rating {
@@ -2046,6 +2139,11 @@ form {
         flex: 1;
         min-width: 0;
     }
+
+    .view-toggle {
+        width: 100%;
+        justify-content: center;
+    }
     
     .add-btn {
         justify-content: center;
@@ -2057,6 +2155,10 @@ form {
     
     .watchlist-grid {
         grid-template-columns: 1fr;
+    }
+
+    .watchlist-grid.watchlist-grid--tiles {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     
     .card-poster {

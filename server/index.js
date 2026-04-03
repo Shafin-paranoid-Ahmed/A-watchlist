@@ -155,6 +155,7 @@ app.post('/api/enrich-batch', async (req, res) => {
     if (items.length > ENRICH_BATCH_MAX) {
         return res.status(400).json({ error: `At most ${ENRICH_BATCH_MAX} items per request` });
     }
+    const forceRefreshAll = !!req.body?.forceRefreshAll;
     const sanitized = items.map((row) => ({
         id: row.id,
         title: row.title,
@@ -163,6 +164,7 @@ app.post('/api/enrich-batch', async (req, res) => {
         posterUrl: row.posterUrl || '',
         imdbRating: row.imdbRating,
         genre: row.genre || '',
+        director: row.director != null ? String(row.director) : '',
         imdbLink: row.imdbLink || '',
         rtRating: row.rtRating,
         notes: row.notes != null ? String(row.notes) : '',
@@ -173,7 +175,8 @@ app.post('/api/enrich-batch', async (req, res) => {
         const { results, updated, failed } = await enrichBatch(sanitized, {
             tmdbKey: TMDB_API_KEY,
             omdbKey: OMDB_API_KEY,
-            concurrency: 6
+            concurrency: 6,
+            forceRefreshAll
         });
         res.json({ patches: results, updated, failed });
     } catch (e) {

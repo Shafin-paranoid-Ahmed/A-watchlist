@@ -69,7 +69,7 @@
                     <circle cx="11" cy="11" r="8"/>
                     <path d="m21 21-4.35-4.35"/>
                 </svg>
-                <input type="text" id="searchInput" placeholder="Title, year, genre, notes, status, S1E2…" autocomplete="off">
+                <input type="text" id="searchInput" placeholder="Title, year, genre, director, notes, status, S1E2…" autocomplete="off">
             </div>
             <div class="filter-buttons">
                 <button class="filter-btn active" data-filter="all">All</button>
@@ -90,8 +90,15 @@
                     <option value="year-asc">Year (oldest)</option>
                     <option value="imdb-desc">IMDB (high → low)</option>
                     <option value="imdb-asc">IMDB (low → high)</option>
+                    <option value="genre-asc">Genre A–Z</option>
+                    <option value="genre-desc">Genre Z–A</option>
                     <option value="status">Status (queue → done)</option>
                 </select>
+            </div>
+            <div class="view-toggle" role="group" aria-label="Card layout">
+                <span class="view-toggle-label">View</span>
+                <button type="button" class="view-toggle-btn active" id="viewListBtn" data-view="list" title="List view">List</button>
+                <button type="button" class="view-toggle-btn" id="viewTilesBtn" data-view="tiles" title="Tiles view">Tiles</button>
             </div>
             <button class="import-btn" id="importBtn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -196,6 +203,13 @@
                                 <option value="Western"></option>
                             </datalist>
                         </div>
+                        <div class="form-group">
+                            <label for="director">Director</label>
+                            <input type="text" id="director" placeholder="e.g., Christopher Nolan" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
                         <div class="form-group">
                             <label for="myRating">My Rating</label>
                             <div class="rating-input">
@@ -505,12 +519,20 @@
 
                     <div class="setting-section">
                         <h3>🔄 Bulk Actions</h3>
-                        <p class="setting-desc">Update all items in your watchlist with missing data.</p>
+                        <p class="setting-desc">Fetch missing metadata, or force refresh every title even if description/ratings already exist.</p>
                         <button type="button" class="btn-secondary bulk-fetch-btn" id="bulkFetchBtn">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                                 <path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c-1.657 0-3-4.03-3-9s1.343-9 3-9m0 18c1.657 0 3-4.03 3-9s-1.343-9-3-9"/>
                             </svg>
                             Fetch Missing Posters & Ratings
+                        </button>
+                        <button type="button" class="btn-secondary bulk-fetch-btn" id="bulkRefetchAllBtn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <polyline points="23 4 23 10 17 10"/>
+                                <polyline points="1 20 1 14 7 14"/>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                            </svg>
+                            Re-fetch All (Overwrite Existing)
                         </button>
                         <div class="bulk-progress" id="bulkProgress" style="display: none;">
                             <div class="progress-bar">

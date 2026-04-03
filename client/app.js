@@ -61,6 +61,7 @@ const exportDataBtn = document.getElementById('exportDataBtn');
 const exportCsvBtn = document.getElementById('exportCsvBtn');
 const clearDataBtn = document.getElementById('clearDataBtn');
 const bulkFetchBtn = document.getElementById('bulkFetchBtn');
+const bulkRefetchAllBtn = document.getElementById('bulkRefetchAllBtn');
 
 // Search Elements
 const searchTitleBtn = document.getElementById('searchTitleBtn');
@@ -90,8 +91,12 @@ const SEARCH_DEBOUNCE_MS = 220;
 let searchDebounceTimer = null;
 
 const SORT_MODE_STORAGE_KEY = 'watchlist_sort_mode';
+const VIEW_MODE_STORAGE_KEY = 'watchlist_view_mode';
 
 const ENRICH_BATCH_SIZE = 120;
+
+/** @type {'list' | 'tiles'} */
+let viewMode = 'list';
 
 const TMDB_SEASON_HYDRATE_DELAY_MS = 130;
 /** TV details + per-season fetches, across all series in one hydrate pass */
@@ -288,7 +293,25 @@ function copyProfileLink() {
 // INITIALIZATION
 // ============================================
 
+function syncViewToggleUi() {
+    document.getElementById('viewListBtn')?.classList.toggle('active', viewMode === 'list');
+    document.getElementById('viewTilesBtn')?.classList.toggle('active', viewMode === 'tiles');
+}
+
+function setViewMode(mode) {
+    viewMode = mode === 'tiles' ? 'tiles' : 'list';
+    try {
+        localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+    } catch (_) {
+        /* ignore */
+    }
+    syncViewToggleUi();
+    renderWatchlist();
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+    viewMode = localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'tiles' ? 'tiles' : 'list';
+    syncViewToggleUi();
     initProfileFromUrl();
     initListModeFromUrl();
     loadApiKey();
@@ -507,6 +530,10 @@ function setupEventListeners() {
     });
     clearDataBtn.addEventListener('click', clearAllData);
     bulkFetchBtn.addEventListener('click', bulkFetchDetails);
+    bulkRefetchAllBtn?.addEventListener('click', () => bulkFetchDetails({ forceRefreshAll: true }));
+
+    document.getElementById('viewListBtn')?.addEventListener('click', () => setViewMode('list'));
+    document.getElementById('viewTilesBtn')?.addEventListener('click', () => setViewMode('tiles'));
     
     // Title search
     searchTitleBtn.addEventListener('click', searchForTitle);
@@ -1007,7 +1034,11 @@ function generateId() {
 
 function renderWatchlist() {
     const filtered = filterAndSortWatchlist();
-    
+
+    if (watchlistGrid) {
+        watchlistGrid.classList.toggle('watchlist-grid--tiles', viewMode === 'tiles');
+    }
+
     if (filtered.length === 0) {
         watchlistGrid.innerHTML = '';
         emptyState.classList.add('visible');
@@ -1030,6 +1061,7 @@ function getSearchableBlob(item) {
     const parts = [
         item.title,
         item.genre,
+        item.director,
         item.notes,
         item.imdbLink,
         item.letterboxdLink,
@@ -1106,6 +1138,17 @@ function compareTitleAsc(a, b) {
         sensitivity: 'base',
         numeric: true
     });
+}
+
+function compareGenreAsc(a, b) {
+    const ga = String(a.genre || '').trim();
+    const gb = String(b.genre || '').trim();
+    if (!ga && !gb) return compareTitleAsc(a, b);
+    if (!ga) return 1;
+    if (!gb) return -1;
+    const c = ga.localeCompare(gb, undefined, { sensitivity: 'base', numeric: true });
+    if (c !== 0) return c;
+    return compareTitleAsc(a, b);
 }
 
 function dateAddedTs(item) {
@@ -1272,6 +1315,9 @@ function createCard(item) {
                         <span>My: ${item.myRating}</span>
                     </div>
                 ` : ''}
+                ${item.director ? `
+                    <div class="card-director"><span class="card-director-label">Director</span>${escapeHtml(item.director)}</div>
+                ` : ''}
                 ${(item.imdbRating || item.rtRating) ? `
                     <div class="card-ratings">
                         ${item.imdbRating ? `<span class="card-imdb-rating">⭐ IMDB ${item.imdbRating}</span>` : ''}
@@ -1356,6 +1402,8 @@ function openModal(id = null) {
         document.getElementById('type').value = item.type;
         document.getElementById('status').value = item.status;
         document.getElementById('genre').value = item.genre || '';
+        const directorEl = document.getElementById('director');
+        if (directorEl) directorEl.value = item.director || '';
         document.getElementById('myRating').value = item.myRating || '';
         document.getElementById('imdbRating').value = item.imdbRating || '';
         document.getElementById('rtRating').value = item.rtRating || '';
@@ -1415,6 +1463,7 @@ function mergeEmptyFormFieldsFromPrev(merged, prev, formData) {
     const optional = [
         'notes',
         'genre',
+        'director',
         'posterUrl',
         'imdbLink',
         'letterboxdLink',
@@ -1730,6 +1779,7 @@ function transformLetterboxd(data) {
             type: lbType,
             status: defaultStatus, // Will be overridden by user selection if not auto
             genre: '',
+            director: '',
             myRating: rating,
             posterUrl: '',
             imdbLink: '',
@@ -1778,6 +1828,7 @@ function transformIMDB(data) {
             type: type,
             status: status,
             genre: genres,
+            director: '',
             myRating: yourRating,
             posterUrl: '',
             imdbLink: imdbId ? `https://www.imdb.com/title/${imdbId}/` : '',
@@ -1805,6 +1856,7 @@ function transformCustomCSV(data) {
         const status = row.status ? normalizeStatus(row.status) : 'want-to-watch';
         const rating = parseFloat(row.rating || row.my_rating || row.score) || null;
         const genre = row.genre || row.genres || '';
+        const director = row.director || row.directors || '';
         const imdbRatingRaw = row.imdb_rating != null ? String(row.imdb_rating).trim() : '';
         const imdbRatingParsed =
             imdbRatingRaw && imdbRatingRaw !== 'N/A' ? parseFloat(imdbRatingRaw) : NaN;
@@ -1818,6 +1870,7 @@ function transformCustomCSV(data) {
             type: type,
             status: status,
             genre: genre,
+            director: director,
             myRating: rating > 10 ? rating / 10 : rating, // Normalize if 0-100 scale
             posterUrl: row.poster || row.poster_url || row.image || '',
             imdbLink: row.imdb || row.imdb_link || row.imdb_url || '',
@@ -1907,6 +1960,7 @@ function titlesFromPasteText(text) {
             type: pstType,
             status: 'want-to-watch',
             genre: '',
+            director: '',
             myRating: null,
             posterUrl: '',
             imdbLink: '',
@@ -2210,6 +2264,7 @@ function exportWatchlistCsv() {
         'status',
         'rating',
         'genre',
+        'director',
         'imdb_link',
         'poster_url',
         'letterboxd_link',
@@ -2229,6 +2284,7 @@ function exportWatchlistCsv() {
                 item.status ?? '',
                 item.myRating ?? '',
                 item.genre ?? '',
+                item.director ?? '',
                 item.imdbLink ?? '',
                 item.posterUrl ?? '',
                 item.letterboxdLink ?? '',
@@ -2278,6 +2334,7 @@ function importBackupFromJsonFile(file) {
                     type: typ,
                     status: it.status || 'want-to-watch',
                     genre: it.genre || '',
+                    director: it.director || '',
                     myRating: it.myRating != null ? parseFloat(it.myRating) : null,
                     imdbRating: it.imdbRating != null ? parseFloat(it.imdbRating) : null,
                     rtRating: it.rtRating != null ? parseInt(it.rtRating, 10) : null,
@@ -2467,6 +2524,14 @@ function isTmdbDetailsPayload(data) {
         !data.status_code &&
         (data.id != null || data.title || data.name)
     );
+}
+
+function directorsFromTmdbCrew(tmdbDetails) {
+    if (!tmdbDetails?.credits?.crew) return '';
+    return tmdbDetails.credits.crew
+        .filter(c => c.job === 'Director')
+        .map(c => c.name)
+        .join(', ');
 }
 
 async function getTMDBDetails(id, mediaType) {
@@ -2993,11 +3058,7 @@ async function selectSearchResult(id, source, mediaType) {
             // Get IMDB ID from external_ids
             imdbId = tmdbDetails.external_ids?.imdb_id || '';
             
-            // Director from credits
-            if (tmdbDetails.credits?.crew) {
-                const directors = tmdbDetails.credits.crew.filter(c => c.job === 'Director');
-                director = directors.map(d => d.name).join(', ');
-            }
+            director = directorsFromTmdbCrew(tmdbDetails);
             
             // Now fetch OMDB for IMDB rating and RT score
             if (imdbId && omdbApiKey) {
@@ -3075,6 +3136,11 @@ async function selectSearchResult(id, source, mediaType) {
     document.getElementById('year').value = year;
     document.getElementById('type').value = type;
     document.getElementById('genre').value = genre;
+    const directorField = document.getElementById('director');
+    if (directorField) {
+        directorField.value =
+            director && String(director).trim() && director !== 'N/A' ? String(director).trim() : '';
+    }
     document.getElementById('posterUrl').value = posterUrl;
     document.getElementById('imdbLink').value = imdbId ? `https://www.imdb.com/title/${imdbId}/` : '';
     const tmdbTvEl = document.getElementById('tmdbTvIdField');
@@ -3100,7 +3166,12 @@ async function selectSearchResult(id, source, mediaType) {
 }
 
 async function bulkFetchDetails(options = {}) {
-    const { onlyIds = null, manageUi = true, quietEmpty = false } = options;
+    const {
+        onlyIds = null,
+        manageUi = true,
+        quietEmpty = false,
+        forceRefreshAll = false
+    } = options;
 
     const hasApiAccess = serverHasTmdbKey || serverHasOmdbKey || tmdbApiKey || omdbApiKey;
     if (!hasApiAccess) {
@@ -3108,16 +3179,17 @@ async function bulkFetchDetails(options = {}) {
         return;
     }
 
-    // Missing poster, ratings, and/or description (notes) — optionally limit to specific ids
+    // Missing poster, ratings, description (notes), director — optionally limit to specific ids
     const needsEnrich = item =>
         !item.posterUrl ||
         item.imdbRating == null ||
         item.imdbRating === '' ||
-        !String(item.notes || '').trim();
+        !String(item.notes || '').trim() ||
+        !String(item.director || '').trim();
 
-    const itemsToUpdate = watchlist.filter(
-        item => needsEnrich(item) && (!onlyIds || onlyIds.has(item.id))
-    );
+    const shouldUpdate = item =>
+        (forceRefreshAll || needsEnrich(item)) && (!onlyIds || onlyIds.has(item.id));
+    const itemsToUpdate = watchlist.filter(shouldUpdate);
 
     if (itemsToUpdate.length === 0) {
         if (!quietEmpty) {
@@ -3129,9 +3201,14 @@ async function bulkFetchDetails(options = {}) {
     const progressDiv = document.getElementById('bulkProgress');
     const progressFill = document.getElementById('progressFill');
     const progressText = document.getElementById('progressText');
+    const setBulkButtonsDisabled = (disabled) => {
+        if (!manageUi) return;
+        if (bulkFetchBtn) bulkFetchBtn.disabled = disabled;
+        if (bulkRefetchAllBtn) bulkRefetchAllBtn.disabled = disabled;
+    };
 
     if (progressDiv) progressDiv.style.display = 'flex';
-    if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = true;
+    setBulkButtonsDisabled(true);
 
     let updated = 0;
     let failed = 0;
@@ -3147,7 +3224,7 @@ async function bulkFetchDetails(options = {}) {
                 const r = await fetch('/api/enrich-batch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items: chunk })
+                    body: JSON.stringify({ items: chunk, forceRefreshAll: !!forceRefreshAll })
                 });
                 if (!r.ok) throw new Error(`HTTP ${r.status}`);
                 const j = await r.json();
@@ -3159,9 +3236,14 @@ async function bulkFetchDetails(options = {}) {
                     if (p.imdbRating != null && p.imdbRating !== '') w.imdbRating = p.imdbRating;
                     if (p.imdbLink) w.imdbLink = p.imdbLink;
                     if (p.genre) w.genre = p.genre;
+                    if (p.director != null && String(p.director).trim()) {
+                        if (forceRefreshAll || !w.director || !String(w.director).trim()) {
+                            w.director = String(p.director).trim();
+                        }
+                    }
                     if (p.rtRating != null && p.rtRating !== '') w.rtRating = p.rtRating;
                     if (
-                        (!w.notes || !String(w.notes).trim()) &&
+                        (forceRefreshAll || !w.notes || !String(w.notes).trim()) &&
                         p.notes != null &&
                         String(p.notes).trim()
                     ) {
@@ -3201,7 +3283,7 @@ async function bulkFetchDetails(options = {}) {
         renderWatchlist();
         await hydrateTmdbSeasonGuides();
         if (progressDiv) progressDiv.style.display = 'none';
-        if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;
+        setBulkButtonsDisabled(false);
         let message = `Updated ${updated} items with posters, ratings, and descriptions`;
         if (failed > 0) message += ` (${failed} not found)`;
         showToast(message, 'success');
@@ -3210,14 +3292,12 @@ async function bulkFetchDetails(options = {}) {
 
     let toProcess = itemsToUpdate;
     if (tryServerBatch && !batchCompletedOk) {
-        toProcess = watchlist.filter(
-            item => needsEnrich(item) && (!onlyIds || onlyIds.has(item.id))
-        );
+        toProcess = watchlist.filter(shouldUpdate);
         if (toProcess.length && !tmdbApiKey && !omdbApiKey) {
             saveWatchlist();
             renderWatchlist();
             if (progressDiv) progressDiv.style.display = 'none';
-            if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;
+            setBulkButtonsDisabled(false);
             showToast('Server enrich failed and no browser API keys to fall back on.', 'error');
             return;
         }
@@ -3258,32 +3338,39 @@ async function bulkFetchDetails(options = {}) {
                 }
                 const mediaType = match.media_type === 'tv' ? 'tv' : 'movie';
                 const needDetails =
+                    forceRefreshAll ||
                     !watchlist[index].posterUrl ||
                     !watchlist[index].genre ||
                     !watchlist[index].imdbLink ||
-                    !String(watchlist[index].notes || '').trim();
+                    !String(watchlist[index].notes || '').trim() ||
+                    !String(watchlist[index].director || '').trim();
                 if (needDetails) {
                     const tmdbDetails = await getTMDBDetails(match.id, mediaType);
                     if (tmdbDetails) {
-                        if (!watchlist[index].posterUrl && tmdbDetails.poster_path) {
+                        if ((forceRefreshAll || !watchlist[index].posterUrl) && tmdbDetails.poster_path) {
                             watchlist[index].posterUrl = getTMDBPosterUrl(tmdbDetails.poster_path, 'w500');
                             foundData = true;
                         }
-                        if (!watchlist[index].genre && tmdbDetails.genres) {
+                        if ((forceRefreshAll || !watchlist[index].genre) && tmdbDetails.genres) {
                             watchlist[index].genre = tmdbDetails.genres.map(g => g.name).join(', ');
                             foundData = true;
                         }
-                        if (!watchlist[index].imdbLink && tmdbDetails.external_ids?.imdb_id) {
+                        if ((forceRefreshAll || !watchlist[index].imdbLink) && tmdbDetails.external_ids?.imdb_id) {
                             watchlist[index].imdbLink = `https://www.imdb.com/title/${tmdbDetails.external_ids.imdb_id}/`;
                             foundData = true;
                         }
+                        const dirStr = directorsFromTmdbCrew(tmdbDetails);
+                        if (dirStr && (forceRefreshAll || !String(watchlist[index].director || '').trim())) {
+                            watchlist[index].director = dirStr;
+                            foundData = true;
+                        }
                         const ov = String(tmdbDetails.overview || '').trim();
-                        if (ov && !String(watchlist[index].notes || '').trim()) {
+                        if (ov && (forceRefreshAll || !String(watchlist[index].notes || '').trim())) {
                             watchlist[index].notes = ov;
                             foundData = true;
                         }
                     }
-                } else if (!watchlist[index].posterUrl && match.poster_path) {
+                } else if ((forceRefreshAll || !watchlist[index].posterUrl) && match.poster_path) {
                     watchlist[index].posterUrl = getTMDBPosterUrl(match.poster_path, 'w500');
                     foundData = true;
                 }
@@ -3292,12 +3379,14 @@ async function bulkFetchDetails(options = {}) {
 
         const canOmdb = serverHasOmdbKey || omdbApiKey;
         const needOmdbRatings =
+            forceRefreshAll ||
             watchlist[index].imdbRating == null ||
             watchlist[index].imdbRating === '' ||
             watchlist[index].rtRating == null ||
             watchlist[index].rtRating === '';
-        const needOmdbNotes = !String(watchlist[index].notes || '').trim();
-        if (canOmdb && (!hadTmdbMatch || needOmdbRatings || needOmdbNotes)) {
+        const needOmdbNotes = forceRefreshAll || !String(watchlist[index].notes || '').trim();
+        const needOmdbDirector = forceRefreshAll || !String(watchlist[index].director || '').trim();
+        if (canOmdb && (!hadTmdbMatch || needOmdbRatings || needOmdbNotes || needOmdbDirector)) {
             const imdbM = String(watchlist[index].imdbLink || '').match(/tt\d+/i);
             let omdbDetails = imdbM ? await getOMDBDetails(imdbM[0]) : null;
             if (!omdbDetails) {
@@ -3318,21 +3407,29 @@ async function bulkFetchDetails(options = {}) {
                         }
                     }
                 }
-                if (!watchlist[index].imdbRating && omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {
+                if ((forceRefreshAll || !watchlist[index].imdbRating) && omdbDetails.imdbRating && omdbDetails.imdbRating !== 'N/A') {
                     watchlist[index].imdbRating = parseFloat(omdbDetails.imdbRating);
                     foundData = true;
                 }
-                if (!watchlist[index].imdbLink && omdbDetails.imdbID) {
+                if ((forceRefreshAll || !watchlist[index].imdbLink) && omdbDetails.imdbID) {
                     watchlist[index].imdbLink = `https://www.imdb.com/title/${omdbDetails.imdbID}/`;
                     foundData = true;
                 }
-                if (!watchlist[index].genre && omdbDetails.Genre) {
+                if ((forceRefreshAll || !watchlist[index].genre) && omdbDetails.Genre) {
                     watchlist[index].genre = omdbDetails.Genre;
+                    foundData = true;
+                }
+                if (
+                    (forceRefreshAll || !String(watchlist[index].director || '').trim()) &&
+                    omdbDetails.Director &&
+                    omdbDetails.Director !== 'N/A'
+                ) {
+                    watchlist[index].director = omdbDetails.Director;
                     foundData = true;
                 }
                 if (omdbDetails.Ratings) {
                     const rtRating = omdbDetails.Ratings.find(r => r.Source === 'Rotten Tomatoes');
-                    if (rtRating && !watchlist[index].rtRating) {
+                    if (rtRating && (forceRefreshAll || !watchlist[index].rtRating)) {
                         const n = parseInt(String(rtRating.Value).replace(/%/g, ''), 10);
                         if (!Number.isNaN(n)) {
                             watchlist[index].rtRating = n;
@@ -3340,7 +3437,7 @@ async function bulkFetchDetails(options = {}) {
                         }
                     }
                 }
-                if (!watchlist[index].posterUrl && omdbDetails.Poster !== 'N/A') {
+                if ((forceRefreshAll || !watchlist[index].posterUrl) && omdbDetails.Poster !== 'N/A') {
                     watchlist[index].posterUrl = omdbDetails.Poster;
                     foundData = true;
                 }
@@ -3369,7 +3466,7 @@ async function bulkFetchDetails(options = {}) {
     await hydrateTmdbSeasonGuides();
 
     if (progressDiv) progressDiv.style.display = 'none';
-    if (bulkFetchBtn && manageUi) bulkFetchBtn.disabled = false;
+    setBulkButtonsDisabled(false);
 
     let message = `Updated ${updated} items with posters, ratings, and descriptions`;
     if (failed > 0) {
