@@ -207,16 +207,14 @@ function updateProfileBarForMode() {
     if (!bar) return;
 
     if (listMode === 'shared') {
-        bar.classList.add('profile-bar--shared');
-        if (label) label.textContent = 'Together';
-        if (slugEl) slugEl.textContent = 'One queue for both of you';
+        if (label) label.textContent = 'List profile';
+        if (slugEl) slugEl.textContent = 'Shared';
         if (switchBtn) switchBtn.style.display = 'none';
         if (copyBtn) {
-            copyBtn.textContent = 'Copy together link';
-            copyBtn.title = 'Share this link — same list for date night';
+            copyBtn.textContent = 'Copy link';
+            copyBtn.title = 'Share the Watch together list (?list=shared)';
         }
     } else {
-        bar.classList.remove('profile-bar--shared');
         if (label) label.textContent = 'List profile';
         if (switchBtn) switchBtn.style.display = '';
         if (copyBtn) {

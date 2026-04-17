@@ -229,11 +229,6 @@ body::before {
     color: var(--text-primary);
 }
 
-.profile-bar--shared {
-    border-color: rgba(245, 197, 24, 0.35);
-    background: rgba(245, 197, 24, 0.06);
-}
-
 .list-mode-tabs {
     display: flex;
     justify-content: center;
