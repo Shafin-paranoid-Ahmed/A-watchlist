@@ -92,7 +92,7 @@ app.get('/api/tmdb/search', async (req, res) => {
     
     const { query, year } = req.query;
     let url = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}`;
-    if (year) url += `&year=${year}`;
+    if (year) url += `&year=${encodeURIComponent(year)}`;
     
     try {
         const response = await fetch(url);
@@ -157,6 +157,7 @@ app.get('/api/tmdb/person/:id/combined_credits', async (req, res) => {
         return res.status(400).json({ error: 'TMDB API key not configured' });
     }
     const { id } = req.params;
+    if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid person id' });
     const url = `https://api.themoviedb.org/3/person/${id}/combined_credits?api_key=${TMDB_API_KEY}`;
     try {
         const response = await fetch(url);
@@ -175,6 +176,9 @@ app.get('/api/tmdb/:mediaType/:id', async (req, res) => {
     }
     
     const { mediaType, id } = req.params;
+    if (!['movie', 'tv'].includes(mediaType) || !/^\d+$/.test(id)) {
+        return res.status(400).json({ error: 'Invalid media type or id' });
+    }
     const url = `https://api.themoviedb.org/3/${mediaType}/${id}?api_key=${TMDB_API_KEY}&append_to_response=external_ids,credits`;
     
     try {

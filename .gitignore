@@ -25,6 +25,17 @@ npm-debug.log*
 # Generated for Vercel (client copied here at build; do not commit)
 public/
 web/
-watchlist-you-2026-04-03.csv
-*.json
-*.csv
+
+# Personal list exports / backups (private data)
+watchlist-*.csv
+watchlist-backup-*.json
+
+# Capacitor/Android config lives on the Android-app-development branch
+capacitor.config.json
+android/app/src/main/assets/
+
+# Android / Capacitor build output and editor state
+android/**/build/
+android/build/
+android/.gradle/
+.cursor/

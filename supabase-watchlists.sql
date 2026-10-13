@@ -7,5 +7,6 @@ create table if not exists public.watchlists (
   updated_at timestamptz not null default now()
 );
 
--- No RLS: only your backend calls Supabase with the service role key.
-alter table public.watchlists disable row level security;
+-- RLS on with no policies: anon/publishable keys get no access through the Data API.
+-- The backend uses the service-role/secret key, which bypasses RLS, so the app keeps working.
+alter table public.watchlists enable row level security;

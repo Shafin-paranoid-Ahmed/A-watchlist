@@ -11,7 +11,11 @@ const TOKEN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 function getSigningSecret(password) {
     const explicit = process.env.SITE_AUTH_SECRET;
     if (explicit && String(explicit).trim()) {
-        return String(explicit).trim();
+        // Mix in the password so rotating it revokes existing sessions, as documented.
+        return crypto
+            .createHmac('sha256', String(explicit).trim())
+            .update(`watchlist-site-v2|${password}`)
+            .digest('hex');
     }
     return crypto.createHash('sha256').update(`watchlist-site-v1|${password}`).digest('hex');
 }
@@ -51,7 +55,11 @@ function getCookie(req, name) {
         if (idx === -1) continue;
         const k = p.slice(0, idx).trim();
         if (k === name) {
-            return decodeURIComponent(p.slice(idx + 1).trim());
+            try {
+                return decodeURIComponent(p.slice(idx + 1).trim());
+            } catch {
+                return null; // malformed encoding = no session
+            }
         }
     }
     return null;

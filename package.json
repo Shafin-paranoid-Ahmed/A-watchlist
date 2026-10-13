@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
+    "test": "node --test --test-timeout=20000 server/security.test.js",
     "client": "npx serve client",
     "build": "node scripts/copy-client-to-web.js",
     "vercel-build": "node scripts/copy-client-to-web.js"

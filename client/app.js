@@ -803,7 +803,7 @@ function hydrateSeasonWatchCheckboxes() {
 
 function syncSeasonCheckboxInCard(card, item, season) {
     if (!card || !item) return;
-    const cb = card.querySelector(`.season-watched-cb[data-item-id="${item.id}"][data-season="${season}"]`);
+    const cb = card.querySelector(`.season-watched-cb[data-item-id="${CSS.escape(String(item.id))}"][data-season="${season}"]`);
     if (!cb) return;
     const eps = item.episodes.filter(e => e.season === season);
     if (eps.length === 0) return;
@@ -863,11 +863,11 @@ function renderSeriesEpisodesBlock(item) {
                         return `
             <li class="episode-row ${ep.watched ? '' : 'episode-row--unwatched'}" data-season="${ep.season}" data-episode="${ep.episode}">
                 <label class="episode-watched-label">
-                    <input type="checkbox" class="episode-watched-cb" data-item-id="${item.id}" data-season="${ep.season}" data-episode="${ep.episode}" ${ep.watched ? 'checked' : ''}>
+                    <input type="checkbox" class="episode-watched-cb" data-item-id="${escapeHtml(item.id)}" data-season="${ep.season}" data-episode="${ep.episode}" ${ep.watched ? 'checked' : ''}>
                     <span class="episode-se-label">E${ep.episode}</span>
                 </label>
                 ${t}
-                <button type="button" class="episode-remove-btn" data-item-id="${item.id}" data-season="${ep.season}" data-episode="${ep.episode}" title="Remove">×</button>
+                <button type="button" class="episode-remove-btn" data-item-id="${escapeHtml(item.id)}" data-season="${ep.season}" data-episode="${ep.episode}" title="Remove">×</button>
             </li>`;
                     })
                     .join('');
@@ -883,7 +883,7 @@ function renderSeriesEpisodesBlock(item) {
                     <ul class="episode-list episode-list--nested">${epRows}</ul>
                 </details>
                 <label class="episode-season-all-label" title="Mark whole season watched">
-                    <input type="checkbox" class="season-watched-cb" data-item-id="${item.id}" data-season="${season}" aria-label="Mark entire season ${season} watched">
+                    <input type="checkbox" class="season-watched-cb" data-item-id="${escapeHtml(item.id)}" data-season="${season}" aria-label="Mark entire season ${season} watched">
                 </label>
             </div>
         </div>`;
@@ -906,7 +906,7 @@ function renderSeriesEpisodesBlock(item) {
                     <input type="number" class="ep-add-episode" min="1" step="1" placeholder="E" aria-label="Episode" title="Episode">
                     <input type="text" class="ep-add-title" placeholder="Title (optional)" aria-label="Episode title">
                     <label class="ep-add-watched-label"><input type="checkbox" class="ep-add-watched"> Watched</label>
-                    <button type="button" class="episode-add-submit-btn btn-episode-add" data-item-id="${item.id}">Add</button>
+                    <button type="button" class="episode-add-submit-btn btn-episode-add" data-item-id="${escapeHtml(item.id)}">Add</button>
                 </div>
             </div>
         </details>
@@ -1321,25 +1321,25 @@ function createCard(item) {
     if (item.justWatchLink) links.push({ url: item.justWatchLink, icon: '📺', title: 'JustWatch' });
     
     return `
-        <article class="card" data-id="${item.id}">
+        <article class="card" data-id="${escapeHtml(item.id)}">
             <div class="card-poster">
-                ${item.posterUrl 
-                    ? `<img src="${item.posterUrl}" alt="${item.title}" onerror="this.parentElement.innerHTML='<span class=\\'card-poster-placeholder\\'>${typeIcons[item.type]}</span>'">`
-                    : `<span class="card-poster-placeholder">${typeIcons[item.type]}</span>`
+                ${item.posterUrl
+                    ? `<img src="${safeUrl(item.posterUrl)}" alt="${escapeHtml(item.title)}" onerror="this.parentElement.innerHTML='<span class=\\'card-poster-placeholder\\'>${typeIcons[item.type] || ''}</span>'">`
+                    : `<span class="card-poster-placeholder">${typeIcons[item.type] || ''}</span>`
                 }
-                <span class="card-type-badge">${item.type}</span>
-                <span class="card-status-badge ${item.status}">${statusLabels[item.status]}</span>
+                <span class="card-type-badge">${escapeHtml(item.type)}</span>
+                <span class="card-status-badge ${escapeHtml(item.status)}">${statusLabels[item.status] || ''}</span>
             </div>
             <div class="card-content">
                 <h3 class="card-title">${escapeHtml(item.title)}</h3>
                 <div class="card-meta">
-                    ${item.year ? `<span class="card-year">${item.year}</span>` : ''}
+                    ${item.year ? `<span class="card-year">${escapeHtml(item.year)}</span>` : ''}
                     ${item.genre ? `<span class="card-genre">${escapeHtml(item.genre)}</span>` : ''}
                 </div>
                 ${item.myRating ? `
                     <div class="card-rating">
                         <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                        <span>My: ${item.myRating}</span>
+                        <span>My: ${escapeHtml(item.myRating)}</span>
                     </div>
                 ` : ''}
                 ${item.director ? `
@@ -1347,25 +1347,25 @@ function createCard(item) {
                 ` : ''}
                 ${(item.imdbRating || item.rtRating) ? `
                     <div class="card-ratings">
-                        ${item.imdbRating ? `<span class="card-imdb-rating">⭐ IMDB ${item.imdbRating}</span>` : ''}
-                        ${item.rtRating ? `<span class="card-rt-rating">🍅 ${item.rtRating}%</span>` : ''}
+                        ${item.imdbRating ? `<span class="card-imdb-rating">⭐ IMDB ${escapeHtml(item.imdbRating)}</span>` : ''}
+                        ${item.rtRating ? `<span class="card-rt-rating">🍅 ${escapeHtml(item.rtRating)}%</span>` : ''}
                     </div>
                 ` : ''}
                 ${item.notes ? `<p class="card-notes">${escapeHtml(item.notes)}</p>` : ''}
                 ${item.type === 'series' ? renderSeriesEpisodesBlock(item) : ''}
                 <div class="card-links">
                     ${links.map(link => `
-                        <a href="${link.url}" target="_blank" rel="noopener noreferrer" 
+                        <a href="${safeUrl(link.url)}" target="_blank" rel="noopener noreferrer"
                            class="card-link" title="${link.title}">${link.icon}</a>
                     `).join('')}
                     <div class="card-actions">
-                        <button class="card-action-btn edit" onclick="editItem('${item.id}')" title="Edit">
+                        <button class="card-action-btn edit" onclick="editItem(${jsArg(item.id)})" title="Edit">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                             </svg>
                         </button>
-                        <button class="card-action-btn delete" onclick="deleteItem('${item.id}')" title="Delete">
+                        <button class="card-action-btn delete" onclick="deleteItem(${jsArg(item.id)})" title="Delete">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="3 6 5 6 21 6"/>
                                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -1631,10 +1631,20 @@ function deleteItem(id) {
 // UTILITIES
 // ============================================
 
+// Escapes quotes too, so the result is safe inside attribute values.
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(text ?? '').replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+// Only http(s) links/images; blocks javascript: and data: URLs from synced or imported lists.
+function safeUrl(url) {
+    return /^https?:\/\//i.test(String(url || '')) ? escapeHtml(url) : '#';
+}
+
+// Quoted JS string literal for inline handlers, e.g. onclick="editItem(${jsArg(id)})".
+function jsArg(value) {
+    return escapeHtml(JSON.stringify(String(value)));
 }
 
 function showToast(message, type = 'success') {
@@ -2056,9 +2066,9 @@ function showPreview() {
     tbody.innerHTML = pendingImports.slice(0, 50).map(item => `
         <tr>
             <td>${escapeHtml(item.title)}</td>
-            <td>${item.year || '-'}</td>
-            <td>${item.type}</td>
-            <td>${item.myRating || '-'}</td>
+            <td>${escapeHtml(item.year || '-')}</td>
+            <td>${escapeHtml(item.type)}</td>
+            <td>${escapeHtml(item.myRating || '-')}</td>
             <td>${statusLabels[item.status] || item.status}</td>
         </tr>
     `).join('');
@@ -3035,19 +3045,19 @@ async function searchForTitle() {
 function renderSearchResults(results) {
     searchResults.innerHTML = results.map(result => {
         return `
-            <div class="search-result-item" data-id="${result.id}" data-source="${result.source}" data-media-type="${result.mediaType || result.type}">
+            <div class="search-result-item" data-id="${escapeHtml(result.id)}" data-source="${escapeHtml(result.source)}" data-media-type="${escapeHtml(result.mediaType || result.type)}">
                 <div class="search-result-poster">
-                    ${result.poster 
-                        ? `<img src="${result.poster}" alt="${result.title}">`
+                    ${result.poster
+                        ? `<img src="${safeUrl(result.poster)}" alt="${escapeHtml(result.title)}">`
                         : `<span class="search-result-poster-placeholder">🎬</span>`
                     }
                 </div>
                 <div class="search-result-info">
                     <div class="search-result-title">${escapeHtml(result.title)}</div>
                     <div class="search-result-meta">
-                        <span>${result.year || 'N/A'}</span>
-                        <span>${result.type}</span>
-                        ${result.rating ? `<span class="search-result-rating">⭐ ${result.rating}</span>` : ''}
+                        <span>${escapeHtml(result.year || 'N/A')}</span>
+                        <span>${escapeHtml(result.type)}</span>
+                        ${result.rating ? `<span class="search-result-rating">⭐ ${escapeHtml(result.rating)}</span>` : ''}
                         <span class="search-result-source">${result.source.toUpperCase()}</span>
                     </div>
                 </div>
@@ -3125,7 +3135,7 @@ async function searchForDirector() {
 function renderDirectorResults(people) {
     directorSearchResults.innerHTML = people.map(person => {
         const photo = person.profile_path
-            ? `<img src="${TMDB_IMAGE_BASE}w185${person.profile_path}" alt="${escapeHtml(person.name)}">`
+            ? `<img src="${TMDB_IMAGE_BASE}w185${escapeHtml(person.profile_path)}" alt="${escapeHtml(person.name)}">`
             : `<span class="search-result-poster-placeholder">🎬</span>`;
         const knownFor = (person.known_for || [])
             .slice(0, 3)
@@ -3133,7 +3143,7 @@ function renderDirectorResults(people) {
             .filter(Boolean)
             .join(', ');
         return `
-            <div class="search-result-item director-result-item" data-person-id="${person.id}">
+            <div class="search-result-item director-result-item" data-person-id="${escapeHtml(person.id)}">
                 <div class="search-result-poster">${photo}</div>
                 <div class="search-result-info">
                     <div class="search-result-title">${escapeHtml(person.name)}</div>
@@ -3220,19 +3230,19 @@ async function showDirectorFilmography(personId, directorName) {
     directorSearchResults.innerHTML = `<div class="director-filmography-header">Directed by ${escapeHtml(directorName)}</div>`;
     const itemsHtml = results.map(result => {
         return `
-            <div class="search-result-item" data-id="${result.id}" data-source="${result.source}" data-media-type="${result.mediaType || result.type}">
+            <div class="search-result-item" data-id="${escapeHtml(result.id)}" data-source="${escapeHtml(result.source)}" data-media-type="${escapeHtml(result.mediaType || result.type)}">
                 <div class="search-result-poster">
                     ${result.poster
-                        ? `<img src="${result.poster}" alt="${escapeHtml(result.title)}">`
+                        ? `<img src="${safeUrl(result.poster)}" alt="${escapeHtml(result.title)}">`
                         : `<span class="search-result-poster-placeholder">🎬</span>`
                     }
                 </div>
                 <div class="search-result-info">
                     <div class="search-result-title">${escapeHtml(result.title)}</div>
                     <div class="search-result-meta">
-                        <span>${result.year || 'N/A'}</span>
-                        <span>${result.type}</span>
-                        ${result.rating ? `<span class="search-result-rating">⭐ ${result.rating}</span>` : ''}
+                        <span>${escapeHtml(result.year || 'N/A')}</span>
+                        <span>${escapeHtml(result.type)}</span>
+                        ${result.rating ? `<span class="search-result-rating">⭐ ${escapeHtml(result.rating)}</span>` : ''}
                         <span class="search-result-source">TMDB</span>
                     </div>
                 </div>

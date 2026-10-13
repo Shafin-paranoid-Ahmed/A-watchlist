@@ -37,7 +37,7 @@ async function enrichFromTmdb(item, apiKey, force) {
 
     try {
         let url = `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&query=${encodeURIComponent(item.title)}`;
-        if (item.year) url += `&year=${item.year}`;
+        if (item.year) url += `&year=${encodeURIComponent(item.year)}`;
         const data = await fetchJson(url);
         const results = (data.results || []).filter(
             (r) => r.media_type === 'movie' || r.media_type === 'tv'
@@ -95,7 +95,7 @@ async function enrichFromOmdb(item, apiKey, force) {
         url = `https://www.omdbapi.com/?apikey=${apiKey}&i=${encodeURIComponent(imdbId)}&plot=full`;
     } else {
         url = `https://www.omdbapi.com/?apikey=${apiKey}&t=${encodeURIComponent(item.title)}`;
-        if (item.year) url += `&y=${item.year}`;
+        if (item.year) url += `&y=${encodeURIComponent(item.year)}`;
         url += '&plot=full';
     }
 
